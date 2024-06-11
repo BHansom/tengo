@@ -2,6 +2,7 @@ package tengo
 
 // SymbolScope represents a symbol scope.
 type SymbolScope string
+type ApiTestVariable string
 
 // List of symbol scopes
 const (
@@ -9,6 +10,42 @@ const (
 	ScopeLocal   SymbolScope = "LOCAL"
 	ScopeBuiltin SymbolScope = "BUILTIN"
 	ScopeFree    SymbolScope = "FREE"
+    
+    // local variable for api tests
+    // all case related data stored in this var
+    // data/case/error/initilized
+    VarCase   ApiTestVariable = "var_case"
+    //inheritable data  label/request
+    VarData   ApiTestVariable = "var_data"
+    //VarDomain ApiTestVariable = "var_domain"
+    //VarHeader ApiTestVariable = "var_header"
+    //Step      ApiTestVariable = "var_step"
+    ////all the labels stored in map
+    //Label     ApiTestVariable = "var_label"
+
+    //variables 
+    // Epic        LabelType = "epic"
+	// Layer       LabelType = "layer"
+	// Feature     LabelType = "feature"
+	// Story       LabelType = "story"
+	// ID          LabelType = "as_id"
+	// Severity    LabelType = "severity"
+	// ParentSuite LabelType = "parentSuite"
+	// Suite       LabelType = "suite"
+	// SubSuite    LabelType = "subSuite"
+	// Package     LabelType = "package"
+	// Thread      LabelType = "thread"
+	// Host        LabelType = "host"
+	// Tag         LabelType = "tag"
+	// Framework   LabelType = "framework"
+	// Language    LabelType = "language"
+	// Owner       LabelType = "owner"
+	// Lead        LabelType = "lead"
+	// AllureID    LabelType = "ALLURE_ID"
+
+    
+    
+    
 )
 
 // Symbol represents a symbol in the symbol table.
@@ -31,10 +68,17 @@ type SymbolTable struct {
 }
 
 // NewSymbolTable creates a SymbolTable.
+//TODO lifecycle of symboltable 
+// new fork resolve addressing
 func NewSymbolTable() *SymbolTable {
-	return &SymbolTable{
+    table := &SymbolTable{
 		store: make(map[string]*Symbol),
 	}
+    
+    // table.Define(string(VarCase))
+    //how to assign a var internally 
+    // s := table.Define(string(VarCase))
+    return table
 }
 
 // Define adds a new symbol in the current scope.
@@ -116,11 +160,16 @@ func (t *SymbolTable) Resolve(
 
 // Fork creates a new symbol table for a new scope.
 func (t *SymbolTable) Fork(block bool) *SymbolTable {
-	return &SymbolTable{
-		store:  make(map[string]*Symbol),
-		parent: t,
-		block:  block,
-	}
+    table:= NewSymbolTable()
+    table.parent=t
+    table.block=block
+    return table
+
+	// return &SymbolTable{
+	// 	store:  make(map[string]*Symbol),
+	// 	parent: t,
+	// 	block:  block,
+	// }
 }
 
 // Parent returns the outer scope of the current symbol table.

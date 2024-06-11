@@ -10,3 +10,6 @@ test: generate lint
 
 fmt:
 	go fmt ./...
+
+cli:
+	go build -o tengo cmd/tengo/main.go
