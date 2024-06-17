@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"math"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -1610,3 +1611,73 @@ func (o *UserFunction) Call(args ...Object) (Object, error) {
 func (o *UserFunction) CanCall() bool {
 	return true
 }
+
+//a non-type native reference type
+type NativeReference struct{
+    ObjectImpl
+    Name string
+    Value interface{}
+}
+
+func (r *NativeReference) TypeName() string {
+    return "native-ref("+reflect.TypeOf(r.Value).String()+")"
+}
+
+func (r *NativeReference) String() string {
+    return fmt.Sprintf("%v",r.Value)
+}
+
+// func (r *NativeReference) BinaryOp(_ token.Token, _ Object) (Object, error) {
+// 	return nil, ErrInvalidOperator
+// }
+
+// returns a new ref to a shadow copy of the native obj
+func (r *NativeReference) Copy() Object {
+    clone := reflect.New(reflect.TypeOf(r).Elem())
+
+	oldElements := reflect.ValueOf(r).Elem()
+	newElements := clone.Elem()
+	for i := 0; i < oldElements.NumField(); i++ {
+		nvField := newElements.Field(i)
+		nvField.Set(oldElements.Field(i))
+	}
+
+	return &NativeReference{
+        Name: r.Name,
+        Value: clone.Interface(),
+    }
+}
+
+func (r *NativeReference) IsFalsy() bool {
+	return r.Value==nil
+}
+
+func (r *NativeReference) Equals(x Object) bool {
+    cmp, ok:=x.(*NativeReference)
+	return ok && r.Value == cmp.Value
+}
+
+//operation can only be performed internally
+func (r *NativeReference) IndexGet(index Object) (res Object, err error) {
+    return nil, ErrNotIndexable
+}
+
+// func (r *NativeReference) IndexSet(_, _ Object) (err error) {
+// 	return ErrNotIndexAssignable
+// }
+//
+// func (r *NativeReference) Iterate() Iterator {
+// 	return nil
+// }
+//
+// func (r *NativeReference) CanIterate() bool {
+// 	return false
+// }
+//
+// func (r *NativeReference) Call(_ ...Object) (ret Object, err error) {
+// 	return nil, nil
+// }
+//
+// func (r *NativeReference) CanCall() bool {
+// 	return false
+// }

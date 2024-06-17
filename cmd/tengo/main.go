@@ -26,6 +26,7 @@ var (
 	showHelp      bool
 	showVersion   bool
 	resolvePath   bool // TODO Remove this flag at version 3
+    trace         bool
 	version       = "dev"
 )
 
@@ -35,6 +36,8 @@ func init() {
 	flag.BoolVar(&showVersion, "version", false, "Show version")
 	flag.BoolVar(&resolvePath, "resolve", false,
 		"Resolve relative import paths")
+	flag.BoolVar(&trace, "trace", false,
+		"Trace parse")
 	flag.Parse()
 }
 
@@ -229,8 +232,12 @@ func compileSrc(
 ) (*tengo.Bytecode, error) {
 	fileSet := parser.NewFileSet()
 	srcFile := fileSet.AddFile(filepath.Base(inputFile), -1, len(src))
+    var traceWriter io.Writer
+    if trace{
+        traceWriter = os.Stdout
+    }
 
-	p := parser.NewParser(srcFile, src, nil)
+    p := parser.NewParser(srcFile, src, traceWriter)
 	file, err := p.ParseFile()
 	if err != nil {
 		return nil, err

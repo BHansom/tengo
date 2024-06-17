@@ -8,12 +8,36 @@ import (
 	"github.com/d5/tengo/v2/token"
 )
 
+//TODO pop vm
+var (
+    vms [8]*VM
+    vp  =  -1
+)
+
+//builtin runtime symbols for api test
+type RuntimeSymbol int
+const (
+    Case RuntimeSymbol = iota
+    // Desc
+    Domain
+    Header
+    Attachment
+    Step
+    Parameter
+    Err
+
+    SymbolsCount
+)
+
+
 // frame represents a function call frame.
 type frame struct {
 	fn          *CompiledFunction
 	freeVars    []*ObjectPtr
 	ip          int
 	basePointer int
+    //runtime vars
+    runtimeVars [SymbolsCount]*Object
 }
 
 // VM is a virtual machine that executes the bytecode compiled by Compiler.
@@ -32,6 +56,13 @@ type VM struct {
 	maxAllocs   int64
 	allocs      int64
 	err         error
+}
+
+func CurrentVM() *VM{
+    if vp<0{
+        return nil
+    }
+    return vms[vp]
 }
 
 // NewVM creates a VM.
@@ -56,6 +87,10 @@ func NewVM(
 	v.frames[0].ip = -1
 	v.curFrame = &v.frames[0]
 	v.curInsts = v.curFrame.fn.Instructions
+
+    vp++
+    vms[vp] = v
+    
 	return v
 }
 
@@ -880,6 +915,17 @@ func (v *VM) run() {
 func (v *VM) IsStackEmpty() bool {
 	return v.sp == 0
 }
+
+func (v *VM) GetRuntimeSymbol(symbol RuntimeSymbol) (*Object){
+    return v.curFrame.runtimeVars[symbol]
+}
+func (v *VM) SetRuntimeSymbol(symbol RuntimeSymbol, val *Object) {
+    v.curFrame.runtimeVars[symbol] = val
+}
+//find current case
+// func (v *VM) FindCurrentCase() (*Object){
+//     
+// }
 
 func indexAssign(dst, src Object, selectors []Object) error {
 	numSel := len(selectors)

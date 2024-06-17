@@ -1,5 +1,7 @@
 package tengo
 
+import "fmt"
+
 var builtinFuncs = []*BuiltinFunction{
 	{
 		Name:  "len",
@@ -125,6 +127,16 @@ var builtinFuncs = []*BuiltinFunction{
 		Name:  "range",
 		Value: builtinRange,
 	},
+    {
+        Name: "glob",
+        Value: builtinGlob,
+    },
+}
+
+
+func builtinGlob(args ...Object)(Object, error){
+    fmt.Println(CurrentVM())
+    return nil, nil
 }
 
 // GetAllBuiltinFunctions returns all builtin function objects.
@@ -677,4 +689,32 @@ func builtinSplice(args ...Object) (Object, error) {
 
 	// return deleted items
 	return &Array{Value: deleted}, nil
+}
+
+func builtinCase(args ...Object) (Object, error){
+    return nil, nil
+}
+func builtinDesc(args ...Object) (Object, error){
+    return nil, nil
+}
+func builtinDomain(args ...Object) (Object, error){
+    return nil, nil
+}
+func builtinHeader(args ...Object) (Object, error){
+    return nil, nil
+}
+func builtinAttachment(args ...Object) (Object, error){
+    return nil, nil
+}
+func builtinStep(args ...Object) (Object, error){
+    return nil, nil
+}
+func builtinParameter(args ...Object) (Object, error){
+    return nil, nil
+}
+func builtinFail(args ...Object) (Object, error){
+    return nil, nil
+}
+func builtinPass(args ...Object) (Object, error){
+    return nil, nil
 }
