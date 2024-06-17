@@ -706,6 +706,10 @@ func (p *Parser) parseStmt() (stmt Stmt) {
 	case token.RBrace:
 		// semicolon may be omitted before a closing "}"
 		return &EmptyStmt{Semicolon: p.pos, Implicit: true}
+    //stmt for allure
+    // case token.Case, token.Domain, token.Header, token.Desc:
+    //     //case stmt cannot be assigned to a var
+    //     return p.parseCaseStmt()
 	default:
 		pos := p.pos
 		p.errorExpected(pos, "statement")
@@ -713,6 +717,20 @@ func (p *Parser) parseStmt() (stmt Stmt) {
 		return &BadStmt{From: pos, To: p.pos}
 	}
 }
+
+/**
+case expr is like func call
+*/
+// func (p *Parser) parseCaseStmt() Stmt{
+//     // x:=p.parseIdent()
+//     pos := p.expect(token.Case)
+//     x:=&StringLit{Value: p.tokenLit, ValuePos: pos, Literal: p.tokenLit}
+//     // p.parse
+//     return &CaseStmt{
+//         Expr: p.parseCall(x),
+//     };
+//
+// }
 
 func (p *Parser) parseForStmt() Stmt {
 	if p.trace {

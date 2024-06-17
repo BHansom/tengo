@@ -1,6 +1,10 @@
 package tengo
 
-import "fmt"
+import (
+	"fmt"
+
+	_ "github.com/d5/tengo/v2/allure"
+)
 
 var builtinFuncs = []*BuiltinFunction{
 	{
@@ -130,6 +134,15 @@ var builtinFuncs = []*BuiltinFunction{
     {
         Name: "glob",
         Value: builtinGlob,
+    },
+
+    {
+        Name: "_caseNew",
+        Value: _caseNew,
+    },
+    {
+        Name: "_caseClose",
+        Value: _caseClose,
     },
 }
 
@@ -691,6 +704,61 @@ func builtinSplice(args ...Object) (Object, error) {
 	return &Array{Value: deleted}, nil
 }
 
+type R struct{
+    caseName string
+    fullName string
+}
+func (r *R) String() string{
+    return r.caseName + ", " + r.fullName
+}
+func _caseNew(args ...Object) (Object, error){
+    if err := validateArgs(2, []string{"string", "string", "string"}, args...); err!=nil{
+        return nil, err
+    }
+ //    if len(args)< 2 {
+	// 	return nil, ErrWrongNumArguments
+ //    }
+ //    if !ok {
+	// 	return nil, ErrInvalidArgumentType{
+	// 		Name:     "caseName",
+	// 		Expected: "string",
+	// 		Found:    args[0].TypeName(),
+	// 	}
+	// }
+ //    if !ok {
+	// 	return nil, ErrInvalidArgumentType{
+	// 		Name:     "fullName",
+	// 		Expected: "string",
+	// 		Found:    args[0].TypeName(),
+	// 	}
+	// }
+    caseName,_ := args[0].(*String)
+    fullName,_ := args[1].(*String)
+    
+    
+    
+    return &NativeReference{
+        Name: "case",
+        Origin: true,
+        Value: &R{
+            caseName: caseName.Value,
+            fullName: fullName.Value,
+        },//allure.NewResult(caseName.Value, fullName.Value),
+    },nil
+}
+func _caseClose(args ...Object) (Object, error){
+    if err := validateArgs(1, []string{"native-ref(*tengo.R)"}, args...); err!=nil{
+        return nil, err
+    }
+    // fmt.Println("args --------")
+    // for _, arg := range args{
+    //     fmt.Println(arg)
+    // }
+    // fmt.Println("--------")
+    return nil, nil
+}
+
+
 func builtinCase(args ...Object) (Object, error){
     return nil, nil
 }
@@ -717,4 +785,26 @@ func builtinFail(args ...Object) (Object, error){
 }
 func builtinPass(args ...Object) (Object, error){
     return nil, nil
+}
+
+func validateArgs(requiredArgs int, types []string, args ...Object) error{
+    if len(args)<requiredArgs{
+        return ErrWrongNumArguments 
+
+    }
+    maxLen:=len(types)
+    for i,arg := range args{
+        if i >= maxLen{
+            break
+        }
+        
+        if arg !=nil && arg.TypeName()!=types[i]{
+            return ErrInvalidArgumentType{
+                Name:     "arg" + string(i),
+                Expected: types[i],
+                Found:    args[i].TypeName(),
+            }
+        }
+    }
+    return nil
 }

@@ -27,6 +27,7 @@ var (
 	showVersion   bool
 	resolvePath   bool // TODO Remove this flag at version 3
     trace         bool
+    dump          bool
 	version       = "dev"
 )
 
@@ -38,6 +39,8 @@ func init() {
 		"Resolve relative import paths")
 	flag.BoolVar(&trace, "trace", false,
 		"Trace parse")
+	flag.BoolVar(&dump, "dump", false,
+		"dump vm")
 	flag.Parse()
 }
 
@@ -144,7 +147,26 @@ func CompileAndRun(
 	}
 
 	machine := tengo.NewVM(bytecode, nil, -1)
-	err = machine.Run()
+    if dump{
+        // machine.Dump()
+        fmt.Println("constants:")
+        i:=0
+        constants:=bytecode.FormatConstants()
+        insts :=bytecode.FormatInstructions()
+        for i<len(constants){
+            fmt.Println(constants[i])
+            i++
+        }
+        i=0
+        fmt.Println("instructions:")
+        for i<len(insts){
+            fmt.Println(insts[i])
+            i++
+        }
+        
+    }else{
+        err = machine.Run()
+    }
 	return
 }
 

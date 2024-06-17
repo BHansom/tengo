@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/d5/tengo/v2/parser"
@@ -89,7 +90,7 @@ func NewCompiler(
 		modules = NewModuleMap()
 	}
 
-	return &Compiler{
+    ret:=&Compiler{
 		file:            file,
 		symbolTable:     symbolTable,
 		constants:       constants,
@@ -101,6 +102,10 @@ func NewCompiler(
 		compiledModules: make(map[string]*CompiledFunction),
 		importFileExt:   []string{SourceFileExtDefault},
 	}
+    ret.initSymbolTable()
+
+    return ret
+
 }
 
 // Compile compiles the AST node.
@@ -122,10 +127,14 @@ func (c *Compiler) Compile(node parser.Node) error {
 			}
 		}
 	case *parser.ExprStmt:
+        caseCall := c.isCaseCall(node.Expr.(*parser.CallExpr).Func)
 		if err := c.Compile(node.Expr); err != nil {
 			return err
 		}
-		c.emit(node, parser.OpPop)
+        //preprocess is not func call
+        if !caseCall{
+            c.emit(node, parser.OpPop)
+        }
 	case *parser.IncDecStmt:
 		op := token.AddAssign
 		if node.Token == token.Dec {
@@ -247,6 +256,7 @@ func (c *Compiler) Compile(node parser.Node) error {
 
 		// first jump placeholder
 		jumpPos1 := c.emit(node, parser.OpJumpFalsy, 0)
+        c.initSymbolTable()
 		if err := c.Compile(node.Body); err != nil {
 			return err
 		}
@@ -298,6 +308,7 @@ func (c *Compiler) Compile(node parser.Node) error {
 		}
 
 		c.symbolTable = c.symbolTable.Fork(true)
+        c.initSymbolTable()
 		defer func() {
 			c.symbolTable = c.symbolTable.Parent(false)
 		}()
@@ -389,6 +400,8 @@ func (c *Compiler) Compile(node parser.Node) error {
 	case *parser.FuncLit:
 		c.enterScope()
 
+        //case as first param implicitly
+        node.Type.Params.List = append([]*parser.Ident{&parser.Ident{Name: string(VarCase), NamePos: node.Pos()}}, node.Type.Params.List...)
 		for _, p := range node.Type.Params.List {
 			s := c.symbolTable.Define(p.Name)
 
@@ -488,9 +501,17 @@ func (c *Compiler) Compile(node parser.Node) error {
 			c.emit(node, parser.OpReturn, 1)
 		}
 	case *parser.CallExpr:
+        if c.isCaseCall(node.Func){
+            return c.compileCase(node)
+        }
+        
 		if err := c.Compile(node.Func); err != nil {
 			return err
 		}
+        
+        if !isInternal(node.Func){
+            node.Args= append([]parser.Expr{&parser.Ident{Name: string(VarCase), NamePos: node.Pos()}}, node.Args...)
+        }
 		for _, arg := range node.Args {
 			if err := c.Compile(arg); err != nil {
 				return err
@@ -599,6 +620,7 @@ func (c *Compiler) Compile(node parser.Node) error {
 		// update second jump offset
 		curPos = len(c.currentInstructions())
 		c.changeOperand(jumpPos2, curPos)
+
 	}
 	return nil
 }
@@ -975,6 +997,7 @@ func (c *Compiler) compileForInStmt(stmt *parser.ForInStmt) error {
 	return nil
 }
 
+
 func (c *Compiler) checkCyclicImports(
 	node parser.Node,
 	modulePath string,
@@ -1337,6 +1360,134 @@ func (c *Compiler) getPathModule(moduleName string) (pathFile string, err error)
 	return "", fmt.Errorf("module '%s' not found at: %s", moduleName, pathFile)
 }
 
+func (c *Compiler) isCaseCall(node parser.Node) bool{
+    caseIdents := []string{
+        "Case",
+        "Header",
+        "Domain",
+        "Suite",
+    }
+    
+    switch t:= node.(type){
+    case *parser.Ident:
+        return slices.Contains(caseIdents, t.Name)
+    default:
+        return false
+    }
+}
+
+//
+// $-1. generate a builtin function resolve code for function call
+// $.   set the case error codes
+func (c *Compiler) compileCase(node *parser.CallExpr) (error){
+    
+    //here should not recursivly find, it has been inherited
+    _, _, found := c.symbolTable.Resolve(string(VarCase), false)
+    if found {
+
+        //_caseClose(var_case)
+        closePrev := &parser.CallExpr{
+            Func: &parser.Ident{
+                Name:"_caseClose", 
+                NamePos: node.Pos(),
+            },
+            LParen: node.Pos(),
+            RParen: node.Pos(),
+            Ellipsis: 0,
+            Args:  []parser.Expr{
+                &parser.Ident{
+                    Name: string(VarCase),
+                    NamePos: node.Pos(),
+                },
+            },
+
+        }
+        if err:= c.Compile(closePrev); err!=nil{
+            return err
+        }
+        // c.emit(node, parser.OpGetLocal, previousCase.Index)
+        // c.emit(node, parser.OpCall, 1, 0)
+        
+    }
+    // var_case = _caseNew(args)
+    t:=token.Define
+    if found{
+        t=token.Assign
+    }
+    caseNew := &parser.AssignStmt{
+        LHS: []parser.Expr{&parser.Ident{ Name: string(VarCase), NamePos: node.Pos(), }},
+        RHS: []parser.Expr{
+            &parser.CallExpr{
+                Func: &parser.Ident{
+                    Name:"_caseNew", 
+                    NamePos: node.Pos(),
+                },
+                LParen: node.Pos(),
+                RParen: node.Pos(),
+                Ellipsis: 0,
+                Args: node.Args,
+            },
+        },
+        Token: t,
+        TokenPos: node.Pos(),
+    }
+    if err:= c.Compile(caseNew); err!=nil{
+        return err
+    }
+
+    // c.emit(node, parser.OpSetLocal, previousCase.Index)
+    // previousCase.LocalAssigned=true
+    
+
+        // c.emit(node, parser.OpCall, )
+        // emit(  call local,)
+        // emit(  op jumpfalsy)
+
+    return nil
+}
+
+//gencode for initialize the symboltable
+func (c *Compiler) initSymbolTable(){
+    // c.symbolTable.DefineApiTestVars()
+    // preSymbol, _, _ := c.symbolTable.parent.Resolve(string(VarCase), false)
+    // symbol, _, _    := c.symbolTable.Resolve(string(VarCase), false)
+    // 
+    // pesudoNode := &parser.Ident{
+    //     Name: "<internal>",
+    //     NamePos: 0,
+    // }
+    // //assignment
+    // c.emit(pesudoNode, parser.OpGetLocal, preSymbol.Index)
+    // c.emit(pesudoNode, parser.OpSetLocal, symbol.Index)
+
+    // t := token.Assign
+    // _, _, found    := c.symbolTable.Resolve(string(VarCase), false)
+    // if !found{
+    //     fmt.Println("not found")
+    //     t=token.Define
+    // }
+
+    _,_,found := c.symbolTable.Resolve(string(VarCase), false)
+    if found{
+        assignLocal := &parser.AssignStmt{
+            LHS: []parser.Expr{&parser.Ident{ Name: string(VarCase), NamePos: 0, }},
+            RHS: []parser.Expr{&parser.Ident{ Name: string(VarCase), NamePos: 0, }},
+            Token: token.Define,
+            TokenPos: 0,
+        }
+        c.Compile(assignLocal)
+    }else{
+        c.symbolTable.Define(string(VarCase))
+    }
+
+
+}
+//gencode for finalize the symbolTable
+func (c *Compiler) finalizeSymbolTable(){
+
+}
+
+
 func resolveAssignLHS(
 	expr parser.Expr,
 ) (name string, selectors []parser.Expr) {
@@ -1377,4 +1528,28 @@ func tracec(c *Compiler, msg string) *Compiler {
 func untracec(c *Compiler) {
 	c.indent--
 	c.printTrace("}")
+}
+
+func isInternal(exp parser.Expr) bool {
+    //internal modules
+    builtinModules:=[]string{
+        "math",
+        "os",
+        "text",
+        "times",
+        "rand",
+        "fmt",
+        "json",
+        "base64",
+        "hex",
+    }
+    switch exp := exp.(type){
+    case *parser.SelectorExpr:
+        return isInternal(exp.Expr)
+    case *parser.Ident:
+        return slices.ContainsFunc(builtinFuncs, func(e *BuiltinFunction) bool { return e.Name==exp.Name}) ||
+            slices.Contains(builtinModules, exp.Name)
+    default:
+        return false
+    }
 }

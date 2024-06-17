@@ -84,6 +84,27 @@ const (
 	In
 	Undefined
 	Import
+
+    // Case       //case
+    // //data
+    // Desc       //Desc/ labels
+    // //config
+    // Domain
+    // Header
+    //
+    // Attachment
+    // Step
+    // Parameter
+    //
+    // Fail
+    // Pass
+    // 
+    // //TODO Assert
+    // //Extract
+    // //Request
+    // //Post/...
+    
+    
 	_keywordEnd
 )
 
@@ -158,6 +179,16 @@ var tokens = [...]string{
 	In:           "in",
 	Undefined:    "undefined",
 	Import:       "import",
+    // Case:         "case",
+    // Desc:         "desc",
+    // Domain:       "domain",
+    // Header:       "header",
+    // Attachment:   "attachment",
+    // Step:         "step",
+    // Parameter:    "parameter",
+    // Fail:         "fail",
+    // Pass:         "pass",
+    
 }
 
 func (tok Token) String() string {

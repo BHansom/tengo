@@ -331,7 +331,7 @@ func (o *BuiltinFunction) TypeName() string {
 }
 
 func (o *BuiltinFunction) String() string {
-	return "<builtin-function>"
+    return "<builtin-function>:" + o.Name
 }
 
 // Copy returns a copy of the type.
@@ -1588,7 +1588,7 @@ func (o *UserFunction) TypeName() string {
 }
 
 func (o *UserFunction) String() string {
-	return "<user-function>"
+    return "<user-function>:" + o.Name
 }
 
 // Copy returns a copy of the type.
@@ -1617,6 +1617,7 @@ type NativeReference struct{
     ObjectImpl
     Name string
     Value interface{}
+    Origin bool
 }
 
 func (r *NativeReference) TypeName() string {
@@ -1624,7 +1625,7 @@ func (r *NativeReference) TypeName() string {
 }
 
 func (r *NativeReference) String() string {
-    return fmt.Sprintf("%v",r.Value)
+    return fmt.Sprintf("ref(%v, %v)",r.Value, r.Origin)
 }
 
 // func (r *NativeReference) BinaryOp(_ token.Token, _ Object) (Object, error) {

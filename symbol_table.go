@@ -17,6 +17,7 @@ const (
     VarCase   ApiTestVariable = "var_case"
     //inheritable data  label/request
     VarData   ApiTestVariable = "var_data"
+    VarError  ApiTestVariable = "var_error"
     //VarDomain ApiTestVariable = "var_domain"
     //VarHeader ApiTestVariable = "var_header"
     //Step      ApiTestVariable = "var_step"
@@ -76,9 +77,14 @@ func NewSymbolTable() *SymbolTable {
 	}
     
     // table.Define(string(VarCase))
+    // s.LocalAssigned =true
+    
     //how to assign a var internally 
     // s := table.Define(string(VarCase))
     return table
+}
+func (t *SymbolTable) DefineApiTestVars() {
+    // t.Define(string(VarCase))
 }
 
 // Define adds a new symbol in the current scope.

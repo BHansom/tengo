@@ -347,3 +347,16 @@ func (s *ReturnStmt) String() string {
 	}
 	return "return"
 }
+
+
+// set case as an expr for now
+type CaseStmt struct{
+    //this is an call expr indeed
+    Token token.Token
+    Expr  *CallExpr
+}
+
+func (e *CaseStmt) stmtNode(){}
+func (e *CaseStmt) Pos() Pos{ return e.Expr.Pos()}
+func (e *CaseStmt) End() Pos{ return e.Expr.End()}
+func (e *CaseStmt) String() string{ return e.Expr.String()}
