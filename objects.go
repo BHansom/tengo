@@ -1617,7 +1617,6 @@ type NativeReference struct{
     ObjectImpl
     Name string
     Value interface{}
-    Origin bool
 }
 
 func (r *NativeReference) TypeName() string {
@@ -1625,7 +1624,7 @@ func (r *NativeReference) TypeName() string {
 }
 
 func (r *NativeReference) String() string {
-    return fmt.Sprintf("ref(%v, %v)",r.Value, r.Origin)
+    return fmt.Sprintf("ref(%v)",r.Value)
 }
 
 // func (r *NativeReference) BinaryOp(_ token.Token, _ Object) (Object, error) {

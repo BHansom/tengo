@@ -256,7 +256,8 @@ func (c *Compiler) Compile(node parser.Node) error {
 
 		// first jump placeholder
 		jumpPos1 := c.emit(node, parser.OpJumpFalsy, 0)
-        c.initSymbolTable()
+        // c.initSymbolTable()
+        // if err:=c.initSymbolTable();err!=nil{ return err}
 		if err := c.Compile(node.Body); err != nil {
 			return err
 		}
@@ -308,7 +309,7 @@ func (c *Compiler) Compile(node parser.Node) error {
 		}
 
 		c.symbolTable = c.symbolTable.Fork(true)
-        c.initSymbolTable()
+        if err:=c.initSymbolTable();err!=nil{ return err}
 		defer func() {
 			c.symbolTable = c.symbolTable.Parent(false)
 		}()
@@ -1365,7 +1366,12 @@ func (c *Compiler) isCaseCall(node parser.Node) bool{
         "Case",
         "Header",
         "Domain",
+        "ParentSuite",
         "Suite",
+        "SubSuite",
+        "Epic",
+        "Feature",
+        "Story",
     }
     
     switch t:= node.(type){
@@ -1382,53 +1388,68 @@ func (c *Compiler) isCaseCall(node parser.Node) bool{
 func (c *Compiler) compileCase(node *parser.CallExpr) (error){
     
     //here should not recursivly find, it has been inherited
-    _, _, found := c.symbolTable.Resolve(string(VarCase), false)
-    if found {
-
-        //_caseClose(var_case)
-        closePrev := &parser.CallExpr{
-            Func: &parser.Ident{
-                Name:"_caseClose", 
-                NamePos: node.Pos(),
-            },
-            LParen: node.Pos(),
-            RParen: node.Pos(),
-            Ellipsis: 0,
-            Args:  []parser.Expr{
-                &parser.Ident{
-                    Name: string(VarCase),
-                    NamePos: node.Pos(),
-                },
-            },
-
-        }
-        if err:= c.Compile(closePrev); err!=nil{
-            return err
-        }
-        // c.emit(node, parser.OpGetLocal, previousCase.Index)
-        // c.emit(node, parser.OpCall, 1, 0)
-        
-    }
+    // _, _, found := c.symbolTable.Resolve(string(VarCase), false)
+    // if found {
+    //
+    //     //_caseClose(var_case)
+    //     closePrev := &parser.CallExpr{
+    //         Func: &parser.Ident{
+    //             Name:"_caseClose", 
+    //             NamePos: node.Pos(),
+    //         },
+    //         LParen: node.Pos(),
+    //         RParen: node.Pos(),
+    //         Ellipsis: 0,
+    //         Args:  []parser.Expr{
+    //             &parser.Ident{
+    //                 Name: string(VarCase),
+    //                 NamePos: node.Pos(),
+    //             },
+    //         },
+    //
+    //     }
+    //     if err:= c.Compile(closePrev); err!=nil{
+    //         return err
+    //     }
+    //     // c.emit(node, parser.OpGetLocal, previousCase.Index)
+    //     // c.emit(node, parser.OpCall, 1, 0)
+    //     
+    // }
     // var_case = _caseNew(args)
-    t:=token.Define
-    if found{
-        t=token.Assign
+    // t:=token.Define
+    // if found{
+    //     t=token.Assign
+    // }
+    callName := node.Func.(*parser.Ident).Name
+
+    var call string
+    var Args []parser.Expr
+
+    if callName=="Case"{
+        call=  "_caseNew"
+        Args=  append([]parser.Expr{&parser.Ident{ Name: string(VarCase), NamePos: node.Pos(), }}, node.Args...)
+    }else{
+        call="_setLocal"
+        Args=  append([]parser.Expr{
+            &parser.Ident{ Name: string(VarCase), NamePos: node.Pos(), },
+            &parser.StringLit{ Value: (callName), ValuePos: node.Pos(), Literal: callName },
+        }, node.Args...)
     }
     caseNew := &parser.AssignStmt{
         LHS: []parser.Expr{&parser.Ident{ Name: string(VarCase), NamePos: node.Pos(), }},
         RHS: []parser.Expr{
             &parser.CallExpr{
                 Func: &parser.Ident{
-                    Name:"_caseNew", 
+                    Name:call, 
                     NamePos: node.Pos(),
                 },
                 LParen: node.Pos(),
                 RParen: node.Pos(),
                 Ellipsis: 0,
-                Args: node.Args,
+                Args: Args, //append([]parser.Expr{&parser.Ident{ Name: string(VarCase), NamePos: node.Pos(), }}, node.Args...),
             },
         },
-        Token: t,
+        Token: token.Assign,
         TokenPos: node.Pos(),
     }
     if err:= c.Compile(caseNew); err!=nil{
@@ -1447,7 +1468,7 @@ func (c *Compiler) compileCase(node *parser.CallExpr) (error){
 }
 
 //gencode for initialize the symboltable
-func (c *Compiler) initSymbolTable(){
+func (c *Compiler) initSymbolTable() error{
     // c.symbolTable.DefineApiTestVars()
     // preSymbol, _, _ := c.symbolTable.parent.Resolve(string(VarCase), false)
     // symbol, _, _    := c.symbolTable.Resolve(string(VarCase), false)
@@ -1471,13 +1492,33 @@ func (c *Compiler) initSymbolTable(){
     if found{
         assignLocal := &parser.AssignStmt{
             LHS: []parser.Expr{&parser.Ident{ Name: string(VarCase), NamePos: 0, }},
-            RHS: []parser.Expr{&parser.Ident{ Name: string(VarCase), NamePos: 0, }},
+            RHS: []parser.Expr{
+                // &parser.Ident{ Name: string(VarCase), NamePos: 0, }
+                &parser.CallExpr{
+                    Func: &parser.Ident{
+                        Name:"_caseCopy", 
+                        NamePos: 0,
+                    },
+                    LParen: 0,
+                    RParen: 0,
+                    Ellipsis: 0,
+                    Args:  []parser.Expr{
+                        &parser.Ident{
+                            Name: string(VarCase),
+                            NamePos: 0,
+                        },
+                    },
+                },
+            },
             Token: token.Define,
             TokenPos: 0,
         }
-        c.Compile(assignLocal)
+
+        return c.Compile(assignLocal)
     }else{
+        //This will only happen one time in every compilation(NewCompiler)
         c.symbolTable.Define(string(VarCase))
+        return nil
     }
 
 

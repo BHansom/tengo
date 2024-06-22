@@ -3,7 +3,7 @@ package tengo
 import (
 	"fmt"
 
-	_ "github.com/d5/tengo/v2/allure"
+	"github.com/d5/tengo/v2/allure"
 )
 
 var builtinFuncs = []*BuiltinFunction{
@@ -143,6 +143,14 @@ var builtinFuncs = []*BuiltinFunction{
     {
         Name: "_caseClose",
         Value: _caseClose,
+    },
+    {
+        Name: "_caseCopy",
+        Value: _caseCopy,
+    },
+    {
+        Name: "_setLocal",
+        Value: _setLocal,
     },
 }
 
@@ -704,15 +712,97 @@ func builtinSplice(args ...Object) (Object, error) {
 	return &Array{Value: deleted}, nil
 }
 
-type R struct{
-    caseName string
-    fullName string
+type C struct{
+    Case *allure.Result
+    LocalCase   bool      // whether the case is assigned in the same scope of the symbol
+                          // object C was duplicated when propagating across block/func
+    Domain      string
+    Headers     map[string]string
+    Suite       string
+    ParentSuite string
+    SubSuite    string
+    Epic        string
+    Story       string
+    Feature     string
+    
+    
+    
+    
 }
-func (r *R) String() string{
-    return r.caseName + ", " + r.fullName
+func (c *C) String() string{
+    ret:="" 
+    if c.Case!=nil{
+        j,_:=c.Case.ToJSON()
+        ret+=fmt.Sprintf("Case %v LocalCase %v", string(j), c.LocalCase)
+    }
+    ret+=fmt.Sprintf("LocalCase %v", c.LocalCase)
+    
+    if c.Domain!=""{
+        ret += fmt.Sprintf(" Domain(%s)", c.Domain)
+    }
+    if len(c.Headers)>0{
+        ret += fmt.Sprintf(" headers(%s)", c.Headers)
+    }
+    if c.ParentSuite!=""{
+        ret += fmt.Sprintf(" ParentSuite(%s)", c.ParentSuite)
+    }
+    if c.Suite!=""{
+        ret += fmt.Sprintf(" Suite(%s)", c.Suite)
+    }
+    if c.SubSuite!=""{
+        ret += fmt.Sprintf(" SubSuite(%s)", c.SubSuite)
+    }
+    if c.Epic!=""{
+        ret += fmt.Sprintf(" Epic(%s)", c.Epic)
+    }
+    if c.Feature!=""{
+        ret += fmt.Sprintf(" Feature(%s)", c.Feature)
+    }
+    if c.Story!=""{
+        ret += fmt.Sprintf(" Story(%s)", c.Story)
+    }
+    
+    return ret 
 }
+//copy the case
+//block/call
+func _caseCopy(args ...Object) (Object, error){
+    if err := validateArgs(1, []string{"native-ref(*tengo.C)"}, args...); err!=nil{
+        return nil, err
+    }
+    if args[0]==nil{
+        return nil, nil
+    }
+    origin:=args[0].(*NativeReference).Value.(*C)
+    newHeaders := map[string]string{}
+    for k,v := range origin.Headers{
+        newHeaders[k]= v
+    }
+    return &NativeReference{
+        Name: "case",
+        Value: &C{
+            Case: origin.Case,
+            LocalCase: false,
+
+            Headers: newHeaders,
+            Domain: origin.Domain,
+            ParentSuite: origin.ParentSuite,
+            Suite:  origin.Suite,
+            SubSuite: origin.SubSuite,
+
+            Epic: origin.Epic,
+            Feature: origin.Feature,
+            Story: origin.Story,
+
+
+        },//allure.NewResult(caseName.Value, fullName.Value),
+    },nil
+    
+    
+}
+//build a new case
 func _caseNew(args ...Object) (Object, error){
-    if err := validateArgs(2, []string{"string", "string", "string"}, args...); err!=nil{
+    if err := validateArgs(3, []string{"native-ref(*tengo.C)", "string", "string", "string"}, args...); err!=nil{
         return nil, err
     }
  //    if len(args)< 2 {
@@ -732,32 +822,105 @@ func _caseNew(args ...Object) (Object, error){
 	// 		Found:    args[0].TypeName(),
 	// 	}
 	// }
-    caseName,_ := args[0].(*String)
-    fullName,_ := args[1].(*String)
+    caseName,_ := args[1].(*String)
+    fullName,_ := args[2].(*String)
+
+    origin:= args[0]
+    if origin!=nil{
+        _caseClose(origin)
+        newCase,_ := _caseCopy(origin)
+        c := newCase.(*NativeReference).Value.(*C)
+        c.Case=nil
+        c.LocalCase=true
+
+        c.ParentSuite=caseName.Value
+        c.SubSuite=fullName.Value
+        return newCase,nil
+    }else{
+        ret:= newEmptyRef()
+        ret.Value.(*C).LocalCase=true
+        return ret,nil
+    }
     
     
     
-    return &NativeReference{
-        Name: "case",
-        Origin: true,
-        Value: &R{
-            caseName: caseName.Value,
-            fullName: fullName.Value,
-        },//allure.NewResult(caseName.Value, fullName.Value),
-    },nil
+    // return &NativeReference{
+    //     Name: "case",
+    //     Value: &C{
+    //         Domain: "domain",
+    //         Headers: map[string]string{"conent-type":"content-type"},
+    //         Suite: "suite",
+    //     },//allure.NewResult(caseName.Value, fullName.Value),
+    // },nil
 }
 func _caseClose(args ...Object) (Object, error){
-    if err := validateArgs(1, []string{"native-ref(*tengo.R)"}, args...); err!=nil{
+    if err := validateArgs(1, []string{"native-ref(*tengo.C)"}, args...); err!=nil{
         return nil, err
     }
-    // fmt.Println("args --------")
-    // for _, arg := range args{
-    //     fmt.Println(arg)
-    // }
-    // fmt.Println("--------")
+    //case not set
+    if args[0] == nil{
+        return nil, nil
+    }
     return nil, nil
 }
 
+//if the local is nil, alloc a new one and return
+func _setLocal(args ...Object)(Object, error){
+    if err := validateArgs(3, []string{"native-ref(*tengo.C)", "string", "string"}, args...); err!=nil{
+        return nil, err
+    }
+    //TODO alloca new natice ref
+    if args[0] !=nil{
+        // args[0],_ = _caseCopy(args[0])
+    }else{
+        args[0] = newEmptyRef()
+    }
+    
+    currentCase := args[0]
+
+    origin:=currentCase.(*NativeReference).Value.(*C)
+    field:=args[1].(*String).Value
+    values:=args[2:]
+    setLocal(origin, field, values...)
+    
+    return currentCase,nil
+}
+
+func setLocal(c *C, field string, value ...Object){
+    arg0:=value[0].(*String).Value
+    switch(field){
+    case "Domain":
+        c.Domain=arg0
+    case "Header":
+        if len(value)==1 || value[1].(*String).Value=="" {
+            delete(c.Headers, arg0)
+        }else{
+            arg1:=value[1].(*String).Value
+            c.Headers[arg0] = arg1
+        }
+    case "ParentSuite":
+        c.ParentSuite=arg0
+    case "Suite":
+        c.Suite=arg0
+    case "SubSuite":
+        c.SubSuite=arg0
+
+    case "Epic":
+        c.Epic=arg0
+    case "Feature":
+        c.Feature=arg0
+    case "Story":
+        c.Story=arg0
+    }
+}
+func newEmptyRef()(*NativeReference){
+    return &NativeReference{
+        Name: "case",
+        Value: &C{
+            Headers: map[string]string{},
+        },
+    }
+}
 
 func builtinCase(args ...Object) (Object, error){
     return nil, nil
