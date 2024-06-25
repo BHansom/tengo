@@ -118,6 +118,19 @@ func (s *Step) Finish() *Step {
 	return s
 }
 
+func (s *Step) Done() *Step{
+	if s.Status == "" {
+        s.Passed()
+	}else{
+        return s
+    }
+    for _,substep := range s.Steps{
+        substep.Done()
+    }
+	s.Finish()
+	return s
+}
+
 // WithParent Sets the step `parentUUID` as the UUID of the step passed in the argument `parent`.
 // Returns a pointer to the current step (For Fluent Interface).
 func (s *Step) WithParent(parent *Step) *Step {

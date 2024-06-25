@@ -267,6 +267,9 @@ func (result *Result) PrintAttachments() {
 // If `Result.Status` is not filled in, consider the test successfully completed (no errors).
 // After that - it calls Finish() and Print() methods.
 func (result *Result) Done() error {
+    for _,step:=range result.Steps{
+        step.Done()
+    }
 	if result.Status == "" {
 		result.Status = Passed
 	}

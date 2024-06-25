@@ -102,7 +102,6 @@ func NewCompiler(
 		compiledModules: make(map[string]*CompiledFunction),
 		importFileExt:   []string{SourceFileExtDefault},
 	}
-    ret.initSymbolTable()
 
     return ret
 
@@ -121,11 +120,14 @@ func (c *Compiler) Compile(node parser.Node) error {
 
 	switch node := node.(type) {
 	case *parser.File:
+        if err:=c.initSymbolTable();err!=nil{ return err}
 		for _, stmt := range node.Stmts {
 			if err := c.Compile(stmt); err != nil {
 				return err
 			}
 		}
+        //finalize the global symboltable
+        if err:=c.finalizeSymbolTable();err!=nil{ return err}
 	case *parser.ExprStmt:
         caseCall := c.isCaseCall(node.Expr.(*parser.CallExpr).Func)
 		if err := c.Compile(node.Expr); err != nil {
@@ -256,8 +258,6 @@ func (c *Compiler) Compile(node parser.Node) error {
 
 		// first jump placeholder
 		jumpPos1 := c.emit(node, parser.OpJumpFalsy, 0)
-        // c.initSymbolTable()
-        // if err:=c.initSymbolTable();err!=nil{ return err}
 		if err := c.Compile(node.Body); err != nil {
 			return err
 		}
@@ -319,6 +319,7 @@ func (c *Compiler) Compile(node parser.Node) error {
 				return err
 			}
 		}
+        if err:=c.finalizeSymbolTable();err!=nil{ return err}
 	case *parser.AssignStmt:
 		err := c.compileAssign(node, node.LHS, node.RHS, node.Token)
 		if err != nil {
@@ -1364,6 +1365,7 @@ func (c *Compiler) getPathModule(moduleName string) (pathFile string, err error)
 func (c *Compiler) isCaseCall(node parser.Node) bool{
     caseIdents := []string{
         "Case",
+
         "Header",
         "Domain",
         "ParentSuite",
@@ -1372,6 +1374,16 @@ func (c *Compiler) isCaseCall(node parser.Node) bool{
         "Epic",
         "Feature",
         "Story",
+        
+        "Fail",
+        "Pass",
+        "FailStep",
+        "PassStep",
+        
+        "Attachment",
+        "Parameter",
+        "Step",
+
     }
     
     switch t:= node.(type){
@@ -1425,16 +1437,35 @@ func (c *Compiler) compileCase(node *parser.CallExpr) (error){
     var call string
     var Args []parser.Expr
 
-    if callName=="Case"{
+    switch(callName){
+    case "Case":
         call=  "_caseNew"
         Args=  append([]parser.Expr{&parser.Ident{ Name: string(VarCase), NamePos: node.Pos(), }}, node.Args...)
-    }else{
+    case "Header", "Domain", "ParentSuite", "Suite", "SubSuite", "Epic", "Feature", "Story":
         call="_setLocal"
         Args=  append([]parser.Expr{
             &parser.Ident{ Name: string(VarCase), NamePos: node.Pos(), },
             &parser.StringLit{ Value: (callName), ValuePos: node.Pos(), Literal: callName },
         }, node.Args...)
+    case "Attachment":
+        call=  "_caseAttachment"
+        Args=  append([]parser.Expr{&parser.Ident{ Name: string(VarCase), NamePos: node.Pos(), }}, node.Args...)
+    case "Step":
+        call=  "_caseStep"
+        Args=  append([]parser.Expr{&parser.Ident{ Name: string(VarCase), NamePos: node.Pos(), }}, node.Args...)
+    case "Parameter":
+        call=  "_caseParameter"
+        Args=  append([]parser.Expr{&parser.Ident{ Name: string(VarCase), NamePos: node.Pos(), }}, node.Args...)
+    case "Fail", "Pass", "PassStep","FailStep":
+        call=  "_caseDone"
+        Args=  append([]parser.Expr{
+            &parser.Ident{ Name: string(VarCase), NamePos: node.Pos(), },
+            &parser.StringLit{ Value: string(callName), ValuePos: node.Pos(), Literal: callName },
+        }, node.Args...)
     }
+    // if callName=="Case"{
+    // }else{
+    // }
     caseNew := &parser.AssignStmt{
         LHS: []parser.Expr{&parser.Ident{ Name: string(VarCase), NamePos: node.Pos(), }},
         RHS: []parser.Expr{
@@ -1517,14 +1548,45 @@ func (c *Compiler) initSymbolTable() error{
         return c.Compile(assignLocal)
     }else{
         //This will only happen one time in every compilation(NewCompiler)
-        c.symbolTable.Define(string(VarCase))
-        return nil
+        // c.symbolTable.Define(string(VarCase))
+        define:= &parser.AssignStmt{
+            LHS: []parser.Expr{&parser.Ident{ Name: string(VarCase), NamePos: 0, }},
+            RHS: []parser.Expr{&parser.UndefinedLit{TokenPos: 0},},
+            Token: token.Define,
+            TokenPos: 0,
+        }
+        return c.Compile(define)
     }
 
 
 }
 //gencode for finalize the symbolTable
-func (c *Compiler) finalizeSymbolTable(){
+func (c *Compiler) finalizeSymbolTable() error{
+    caseClose := //&parser.AssignStmt{
+        // LHS: []parser.Expr{&parser.Ident{ Name: string(VarCase), NamePos: 0, }},
+        // RHS: []parser.Expr{
+            // &parser.Ident{ Name: string(VarCase), NamePos: 0, }
+            &parser.CallExpr{
+                Func: &parser.Ident{
+                    Name:"_caseClose", 
+                    NamePos: 0,
+                },
+                LParen: 0,
+                RParen: 0,
+                Ellipsis: 0,
+                Args:  []parser.Expr{
+                    &parser.Ident{
+                        Name: string(VarCase),
+                        NamePos: 0,
+                    },
+                },
+            }
+    //     },
+    //     Token: token.Define,
+    //     TokenPos: 0,
+    // }
+
+    return c.Compile(caseClose)
 
 }
 

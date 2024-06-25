@@ -128,6 +128,19 @@ func (v *VM) Run() (err error) {
 	}
 	return nil
 }
+//copied from ↑
+func (v *VM)getStackTrace() string{
+    filePos := v.fileSet.Position(v.curFrame.fn.SourcePos(v.ip-1))
+    ret:= fmt.Sprintf("\tat %s", filePos)
+    frameIndex := v.framesIndex
+    for frameIndex>1{
+        frameIndex--
+        frame:= &v.frames[frameIndex-1]
+        filePos = v.fileSet.Position(frame.fn.SourcePos(frame.ip -1 ))
+        ret+= fmt.Sprintf("%w\n\tat %s", ret, filePos)
+    }
+    return ret
+}
 
 func (v *VM) run() {
 	for atomic.LoadInt64(&v.aborting) == 0 {
