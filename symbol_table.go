@@ -15,6 +15,7 @@ const (
     // all case related data stored in this var
     // data/case/error/initilized
     VarCase   ApiTestVariable = "var_case"
+    ParamCase ApiTestVariable = "param_case"
     //inheritable data  label/request
     VarData   ApiTestVariable = "var_data"
     VarError  ApiTestVariable = "var_error"

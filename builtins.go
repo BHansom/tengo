@@ -168,6 +168,10 @@ var builtinFuncs = []*BuiltinFunction{
         Name: "_caseDone",
         Value: _caseDone,
     },
+    {
+        Name: "_caseCombine",
+        Value: _caseCombine,
+    },
 }
 
 
@@ -742,6 +746,7 @@ type C struct{
     Epic        string
     Story       string
     Feature     string
+    Package     string
     
     
     
@@ -778,6 +783,9 @@ func (c *C) String() string{
     }
     if c.Story!=""{
         ret += fmt.Sprintf(" Story(%s)", c.Story)
+    }
+    if c.Story!=""{
+        ret += fmt.Sprintf(" Package(%s)", c.Package)
     }
     
     return ret 
@@ -818,6 +826,7 @@ func _caseCopy(args ...Object) (Object, error){
             Epic: origin.Epic,
             Feature: origin.Feature,
             Story: origin.Story,
+            Package: origin.Package,
 
 
         },//allure.NewResult(caseName.Value, fullName.Value),
@@ -901,6 +910,7 @@ func _caseClose(args ...Object) (Object, error){
         return nil,nil
     }
 
+    applyTags(c)
     c.Case.Done()
     
     return nil, nil
@@ -950,6 +960,8 @@ func setLocal(c *C, field string, value ...Object){
         c.Feature=arg0
     case "Story":
         c.Story=arg0
+    case "Package":
+        c.Package=arg0
     }
 }
 func newEmptyRef()(*NativeReference){
@@ -1010,7 +1022,7 @@ func _caseParameter(args ...Object) (Object, error){
     key := args[1].(*String).Value
     value := args[2].(*String).Value
     
-    if len(c.Steps)>=0{
+    if len(c.Steps)>0{
         //current step
         c.Steps[len(c.Steps)-1].WithParameters(allure.NewParameter(key, value))
     }else{
@@ -1090,9 +1102,11 @@ func _caseDone(args ...Object) (Object, error){
             trace:= CurrentVM().getStackTrace()
             c.Case.StatusDetails = allure.StatusDetail{Message: msg, Trace: trace}
             c.Case.Status        = allure.Failed
+            applyTags(c)
             c.Case.Done()
             
         }else{
+            applyTags(c)
             c.Case.Done()
         }
     case "FailStep","PassStep": //step
@@ -1121,6 +1135,7 @@ func _caseDone(args ...Object) (Object, error){
                 //failing a step makes the full case fail
                 c.Case.StatusDetails = *detail
                 c.Case.Status        = allure.Failed
+                applyTags(c)
                 c.Case.Done()
                 
             }else{
@@ -1131,6 +1146,53 @@ func _caseDone(args ...Object) (Object, error){
         }
     }
     return nil, nil
+}
+
+//return a copy the param_case and override the data with var_case
+//param: param_case var_case
+func _caseCombine(args ...Object) (Object, error){
+    if args[0] == UndefinedValue{
+        //param is undefined
+        newCase,err := _caseCopy(args[1])
+        if newCase!=nil{
+            newCase.(*NativeReference).Value.(*C).Case=nil
+            newCase.(*NativeReference).Value.(*C).LocalCase=false
+        }
+        return newCase,err
+    }
+    if args[1] == UndefinedValue{
+        return _caseCombine(args[0])
+    }
+
+    if err := validateArgs(2, []string{"native-ref(*tengo.C)", "native-ref(*tengo.C)"}, args...); err!=nil{
+        return nil, err
+    }
+    newCase, err:= _caseCopy(args[1])
+    if err!=nil{return nil, err}
+    origin := args[0].(*NativeReference).Value.(*C)
+    c:= newCase.(*NativeReference).Value.(*C)
+    c.Case = origin.Case
+    c.LocalCase = false
+    steps:= []*allure.Step{}
+    for _,s := range origin.Steps{
+        steps = append(steps, s)
+    }
+    c.Steps = steps
+    return newCase, nil
+}
+
+func applyTags(c *C){
+    if c.Case!=nil{
+        // if c.
+            
+        if c.Suite       !=""{c.Case.WithSuite(c.Suite)}
+        if c.ParentSuite !=""{c.Case.WithParentSuite(c.ParentSuite)}
+        if c.SubSuite    !=""{c.Case.WithSubSuites(c.SubSuite)}
+        if c.Epic        !=""{c.Case.WithEpic(c.Epic)}
+        if c.Story       !=""{c.Case.WithStory(c.Story)}
+        if c.Feature     !=""{c.Case.WithFeature(c.Feature)}
+        if c.Package     !=""{c.Case.WithPackage(c.Package)}
+    }
 }
 
 func warnNoCaseOrStep() {

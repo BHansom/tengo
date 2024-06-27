@@ -187,6 +187,20 @@ func (result *Result) WithPackage(pkg string) *Result {
 	return result
 }
 
+func (result *Result) WithEpic(epic string) *Result {
+	result.ReplaceNewLabel(Epic, epic)
+	return result
+}
+func (result *Result) WithFeature(feature string) *Result {
+	result.ReplaceNewLabel(Feature, feature)
+	return result
+}
+func (result *Result) WithStory(story string) *Result {
+	result.ReplaceNewLabel(Story, story)
+	return result
+}
+
+
 // WithLabels Adds an array of `allure.Label`.
 // Returns a pointer to the current `allure.Result` (for Fluent Interface).
 func (result *Result) WithLabels(label ...*Label) *Result {
