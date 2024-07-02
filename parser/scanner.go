@@ -201,6 +201,9 @@ func (s *Scanner) Scan() (
 			tok = s.switch2(token.Assign, token.Equal)
 		case '!':
 			tok = s.switch2(token.Not, token.NotEqual)
+            if s.ch=='\n'{
+                insertSemi=true
+            }
 		case '&':
 			if s.ch == '^' {
 				s.next()

@@ -172,6 +172,14 @@ var builtinFuncs = []*BuiltinFunction{
         Name: "_caseCombine",
         Value: _caseCombine,
     },
+    {
+        Name: "_emptyRef",
+        Value: _emptyRef,
+    },
+    {
+        Name: "_toggleError",
+        Value: _toggleError,
+    },
 }
 
 
@@ -732,12 +740,42 @@ func builtinSplice(args ...Object) (Object, error) {
 	return &Array{Value: deleted}, nil
 }
 
+type StepTrace struct{
+    Steps       []*allure.Step
+}
+func (st *StepTrace)empty()bool{ return len(st.Steps)==0}
+func (st *StepTrace)current() *allure.Step{ return st.Steps[len(st.Steps)-1]} 
+func (st *StepTrace)root() *allure.Step{ return st.Steps[0]} 
+func (st *StepTrace)push(s *allure.Step) { st.Steps = append(st.Steps, s)} 
+func (st *StepTrace)pop()   *allure.Step { 
+    assert(len(st.Steps)>0)
+    ret:= st.current()
+    st.Steps = st.Steps[:len(st.Steps)-1]
+    return ret
+} 
+func (st *StepTrace)fail(detail *allure.StatusDetail){
+    for i:=len(st.Steps)-1;i>=0;i--{// fail all the steps
+        if i==len(st.Steps)-1{
+            st.Steps[i].Fail(detail)
+            detail = &allure.StatusDetail{
+                Message: fmt.Sprintf("step [%s] failure",  st.Steps[i].Name),
+                Trace: detail.Trace,
+            }
+        }else{
+            st.Steps[i].Fail(detail)
+        }
+    }
+}
+
 type C struct{
     Case *allure.Result
     LocalCase   bool      // whether the case is assigned in the same scope of the symbol
                           // object C was duplicated when propagating across block/func
+    Error       bool      // whether error propagation is accepted 
+    Trace       *allure.StatusDetail //error trace
+
     //step stack of the current case
-    Steps       []*allure.Step
+    St          *StepTrace
     Domain      string
     Headers     map[string]string
     Suite       string
@@ -752,13 +790,37 @@ type C struct{
     
     
 }
+
+func (c *C) addStep(name string) {
+    newStep := allure.NewSimpleStep(name)
+    newStep.Begin()
+    if current:=c.currentStep(); current!=nil{
+        current.WithChild(newStep)
+    }else{
+        //TODO append on close
+        c.Case.Steps = append(c.Case.Steps, newStep)
+    }
+    c.St.push(newStep)
+}
+func (c *C) popStep() *allure.Step{
+    return c.St.pop()
+}
+func (c *C) currentStep() *allure.Step{
+    if c.St.empty(){
+        return nil
+    }else{
+        return c.St.current()
+    }
+}
+func (c *C) caseAvailable() bool{
+    return c.Case!=nil && c.Case.Status==""
+}
 func (c *C) String() string{
     ret:="" 
     if c.Case!=nil{
         j,_:=c.Case.ToJSON()
         ret+=fmt.Sprintf("Case %v LocalCase %v", string(j), c.LocalCase)
     }
-    ret+=fmt.Sprintf("LocalCase %v", c.LocalCase)
     
     if c.Domain!=""{
         ret += fmt.Sprintf(" Domain(%s)", c.Domain)
@@ -787,16 +849,30 @@ func (c *C) String() string{
     if c.Story!=""{
         ret += fmt.Sprintf(" Package(%s)", c.Package)
     }
+    if c.Trace!=nil{
+        ret += fmt.Sprintf(" Trace(%s)", c.Trace)
+    }
+    if c.Error{
+        ret += fmt.Sprintf(" Error(%v)", c.Error)
+    }
+    
     
     return ret 
+}
+
+func _toggleError(args ...Object)(Object , error){
+    if err := validateArgs(1, []string{"native-ref(*tengo.C)"}, args...); err!=nil{
+        return nil, err
+    }
+    c:= args[0].(*NativeReference).Value.(*C)
+    c.Error=true
+
+    return args[0],nil
 }
 //copy the case
 //block/call
 func _caseCopy(args ...Object) (Object, error){
-    if args[0]==UndefinedValue{
-        return nil, nil
-    }
-    if err := validateArgs(1, []string{"native-ref(*tengo.C)"}, args...); err!=nil{
+   if err := validateArgs(1, []string{"native-ref(*tengo.C)"}, args...); err!=nil{
         return nil, err
     }
     origin:=args[0].(*NativeReference).Value.(*C)
@@ -804,18 +880,12 @@ func _caseCopy(args ...Object) (Object, error){
     for k,v := range origin.Headers{
         newHeaders[k]= v
     }
-    steps:= []*allure.Step{}
-    //the step stack is duplicated
-    for _,s := range origin.Steps{
-        steps = append(steps, s)
-    }
     return &NativeReference{
         Name: "case",
         Value: &C{
             Case: origin.Case,
             LocalCase: false,
-            //should this be pointer
-            Steps: steps,
+            St: origin.St,
 
             Headers: newHeaders,
             Domain: origin.Domain,
@@ -827,6 +897,7 @@ func _caseCopy(args ...Object) (Object, error){
             Feature: origin.Feature,
             Story: origin.Story,
             Package: origin.Package,
+            Trace: origin.Trace,
 
 
         },//allure.NewResult(caseName.Value, fullName.Value),
@@ -836,70 +907,42 @@ func _caseCopy(args ...Object) (Object, error){
 }
 //build a new case
 func _caseNew(args ...Object) (Object, error){
-    assert(len(args)>0)
-    if args[0]!=UndefinedValue{
-        if err := validateArgs(3, []string{"native-ref(*tengo.C)", "string", "string", "string"}, args...); err!=nil{
-            return nil, err
-        }
+    if err := validateArgs(3, []string{"native-ref(*tengo.C)", "string", "string", "string"}, args...); err!=nil{
+        return nil, err
     }
- //    if len(args)< 2 {
-	// 	return nil, ErrWrongNumArguments
- //    }
- //    if !ok {
-	// 	return nil, ErrInvalidArgumentType{
-	// 		Name:     "caseName",
-	// 		Expected: "string",
-	// 		Found:    args[0].TypeName(),
-	// 	}
-	// }
- //    if !ok {
-	// 	return nil, ErrInvalidArgumentType{
-	// 		Name:     "fullName",
-	// 		Expected: "string",
-	// 		Found:    args[0].TypeName(),
-	// 	}
-	// }
     caseName,_ := args[1].(*String)
     fullName,_ := args[2].(*String)
 
-    origin:= args[0]
-    var ret Object
-    if origin!=UndefinedValue{
-        if origin.(*NativeReference).Value.(*C).Case.Status==""{
-            _caseDone(origin, &String{Value: "Pass"})
-        }
-        ret,_ = _caseCopy(origin)
-    }else{
-        ret= newEmptyRef()
+    origin:= args[0].(*NativeReference).Value.(*C)
+    if origin.Case!=nil && origin.Case.Status!=""{
+        _caseDone(args[0], &String{Value: "Pass"})
     }
+    ret,_ := _caseCopy(args[0])
+
     c := ret.(*NativeReference).Value.(*C)
     c.LocalCase=true
     c.Case= allure.NewResult(caseName.Value, fullName.Value)
+    c.St  = &StepTrace{}
     if len(args)>3{
         desc:=args[3].(*String)
         c.Case.Description = desc.Value
     }
     c.Case.Begin()
+    if origin.Trace!=nil{
+        //skip it now
+        // _caseDone(ret, &String{Value: "Fail"}, &String{ Value: origin.Trace.Message}, &String{ Value: origin.Trace.Trace})
+        caseSkip(c, origin.Trace)
+        
+        
+    }
     return ret,nil
     
     
     
-    // return &NativeReference{
-    //     Name: "case",
-    //     Value: &C{
-    //         Domain: "domain",
-    //         Headers: map[string]string{"conent-type":"content-type"},
-    //         Suite: "suite",
-    //     },//allure.NewResult(caseName.Value, fullName.Value),
-    // },nil
 }
 //implicitly finish the case
 func _caseClose(args ...Object) (Object, error){
-    //case not set
-    if args[0] == UndefinedValue{
-        return nil, nil
-    }
-    if err := validateArgs(1, []string{"native-ref(*tengo.C)"}, args...); err!=nil{
+    if err := validateArgs(2, []string{"native-ref(*tengo.C)", "native-ref(*tengo.C)", "bool"}, args...); err!=nil{
         return nil, err
     }
     c:= args[0].(*NativeReference).Value.(*C)
@@ -907,20 +950,31 @@ func _caseClose(args ...Object) (Object, error){
     //nothing to do
     if c.Case==nil || c.Case.Status!="" || 
         !c.LocalCase {
-        return nil,nil
+        //TODO extract function for status check 
+    }else{
+        applyTags(c)
+        c.Case.Done()
+    }
+    
+    if c.Trace!=nil{
+        fmt.Println("_caseClose trace not null" )
+        //TODO extract method to fail the C
+        isBlock := args[2].(*Bool).value
+        param := args[1].(*NativeReference).Value.(*C)
+        if (isBlock || param.Error) && 
+            param.Trace == nil {
+            param.Trace = c.Trace
+            param.Error=false//reset
+        }
     }
 
-    applyTags(c)
-    c.Case.Done()
+    
     
     return nil, nil
 }
 
 //if the local is nil, alloc a new one and return
 func _setLocal(args ...Object)(Object, error){
-    if args[0] == UndefinedValue{
-        args[0] = newEmptyRef()
-    }
     if err := validateArgs(3, []string{"native-ref(*tengo.C)", "string", "string"}, args...); err!=nil{
         return nil, err
     }
@@ -964,13 +1018,11 @@ func setLocal(c *C, field string, value ...Object){
         c.Package=arg0
     }
 }
-func newEmptyRef()(*NativeReference){
+func _emptyRef(args ...Object)(Object, error){
     return &NativeReference{
         Name: "case",
-        Value: &C{
-            Headers: map[string]string{},
-        },
-    }
+        Value: &C{},
+    },nil
 }
 
 //attachment/param/step set to current step/case
@@ -978,15 +1030,11 @@ func newEmptyRef()(*NativeReference){
 //1. case undefined
 //2. case finished
 func _caseAttachment(args ...Object) (Object, error){
-    if args[0] == UndefinedValue{
-        warnNoCaseOrStep()
-        return nil,nil
-    }
     if err := validateArgs(4, []string{"native-ref(*tengo.C)", "string", "string", "string"}, args...); err!=nil{
         return nil, err
     }
     c:= args[0].(*NativeReference).Value.(*C)
-    if c.Case.Status!=""{
+    if c.Case==nil || c.Case.Status!=""{
         warnNoCaseOrStep()
         return nil,nil
     }
@@ -996,8 +1044,8 @@ func _caseAttachment(args ...Object) (Object, error){
     mime := args[2].(*String).Value
     content := args[3].(*String).Value
 
-    if len(c.Steps)>=0 {
-        c.Steps[len(c.Steps)-1].WithAttachments(allure.NewAttachment(name, allure.MimeType(mime), []byte(content)))
+    if !c.St.empty() {
+        c.currentStep().WithAttachments(allure.NewAttachment(name, allure.MimeType(mime), []byte(content)))
             
     }else{
         c.Case.Attachments = append(c.Case.Attachments, (allure.NewAttachment(name, allure.MimeType(mime), []byte(content))))
@@ -1007,24 +1055,20 @@ func _caseAttachment(args ...Object) (Object, error){
 }
 //param
 func _caseParameter(args ...Object) (Object, error){
-    if args[0] == UndefinedValue{
-        warnNoCaseOrStep()
-        return nil, nil
-    }
-    if err := validateArgs(3, []string{"native-ref(*tengo.C)", "string", "string"}, args...); err!=nil{
+   if err := validateArgs(3, []string{"native-ref(*tengo.C)", "string", "string"}, args...); err!=nil{
         return nil, err
     }
     c:= args[0].(*NativeReference).Value.(*C)
-    if c.Case.Status!=""{
+    if c.Case==nil|| c.Case.Status!=""{
         warnNoCaseOrStep()
         return nil, nil
     }
     key := args[1].(*String).Value
     value := args[2].(*String).Value
     
-    if len(c.Steps)>0{
+    if !c.St.empty(){
         //current step
-        c.Steps[len(c.Steps)-1].WithParameters(allure.NewParameter(key, value))
+        c.currentStep().WithParameters(allure.NewParameter(key, value))
     }else{
         c.Case.Parameters = append(c.Case.Parameters, allure.NewParameter(key, value))
     }
@@ -1033,46 +1077,24 @@ func _caseParameter(args ...Object) (Object, error){
 }
 //a stack is used to store the step
 func _caseStep(args ...Object) (Object, error){
-    if args[0] == UndefinedValue{
-        warnNoCaseOrStep()
-        return nil,nil
-    }
-    if err := validateArgs(2, []string{"native-ref(*tengo.C)", "string"}, args...); err!=nil{
+   if err := validateArgs(2, []string{"native-ref(*tengo.C)", "string"}, args...); err!=nil{
         return nil, err
     }
     c:= args[0].(*NativeReference).Value.(*C)
-    if c.Case.Status!=""{
+    if !c.caseAvailable(){
         warnNoCaseOrStep()
         return nil,nil
     }
     stepName := args[1].(*String).Value
-    var newStep *allure.Step 
-    assert(c.Case.Status=="")
-    if len(c.Steps)>0{
-        newStep = allure.NewSimpleStep(stepName)
-        newStep.Begin()
-
-        currentStep := c.Steps[len(c.Steps)-1]
-        assert(currentStep.Status=="")
-        currentStep.WithChild(newStep)
-    }else{
-        newStep = allure.NewSimpleStep(stepName)
-        newStep.Begin()
-        
-        c.Case.Steps = append(c.Case.Steps, newStep)
-    }
-    c.Steps = append(c.Steps, newStep)
+    c.addStep(stepName)
     return nil, nil
 }
 //manually pass/fail current case/step
 //PassStep()/Pass()
 //FailCase("message")/FailStep("message")
+//optional param msg/trace
 func _caseDone(args ...Object) (Object, error){
-    if args[0] == UndefinedValue{
-        warnNoCaseOrStep()
-        return nil, nil
-    }
-    if err := validateArgs(2, []string{"native-ref(*tengo.C)", "string", "string"}, args...); err!=nil{
+   if err := validateArgs(2, []string{"native-ref(*tengo.C)", "string", "string", "string"}, args...); err!=nil{
         return nil, err
     }
     c:=args[0].(*NativeReference).Value.(*C)
@@ -1084,26 +1106,35 @@ func _caseDone(args ...Object) (Object, error){
         }
     }
     
-    if c.Case.Status!=""{
+    if c.Case==nil ||c.Case.Status!=""{
         warnNoCaseOrStep()
         return nil,nil
     }
     switch(t.Value){
     case "Fail","Pass": //case
         //finish the steps
-        if len(c.Steps)>0{
+        if !c.St.empty(){
             //finish the cases, the sub steps are done recursively
-            c.Steps[0].Done()
+            c.St.root().Done()
         }
         //finish the case
         if t.Value=="Fail"{
             //fail the case
             msg:=args[2].(*String).Value
-            trace:= CurrentVM().getStackTrace()
+            var trace string
+            if len(args)>=4{
+                trace = args[3].(*String).Value
+            }else{
+                trace= CurrentVM().getStackTrace()
+            }
             c.Case.StatusDetails = allure.StatusDetail{Message: msg, Trace: trace}
             c.Case.Status        = allure.Failed
             applyTags(c)
             c.Case.Done()
+            c.Trace = &allure.StatusDetail{
+                Message: fmt.Sprintf("case [%s] failure", c.Case.Name),
+                Trace: trace,
+            }
             
         }else{
             applyTags(c)
@@ -1111,37 +1142,29 @@ func _caseDone(args ...Object) (Object, error){
         }
     case "FailStep","PassStep": //step
         //check steps empty 
-        if len(c.Steps)==0{
+        if c.St.empty(){
             //no steps
             warnNoCaseOrStep()
             return nil,nil
         }else{
             if t.Value=="FailStep"{
-                var detail *allure.StatusDetail
                 msg:=args[2].(*String).Value
                 trace:=CurrentVM().getStackTrace()
-                for i:=len(c.Steps)-1;i>=0;i--{
-                    if i==len(c.Steps)-1{
-                        c.Steps[i].Fail(&allure.StatusDetail{Message: msg, Trace: trace})
-                        detail = &allure.StatusDetail{
-                            Message: fmt.Sprintf("step %s failure",  c.Steps[i].Name),
-                            Trace: trace,
-                        }
-                    }else{
-                        c.Steps[i].Fail(detail)
-                    }
-                }
-                c.Steps=c.Steps[:0] 
+                stepName := c.currentStep().Name
+                c.St.fail(&allure.StatusDetail{Message: msg, Trace: trace})
                 //failing a step makes the full case fail
-                c.Case.StatusDetails = *detail
+                //TODO use pointer
+                c.Case.StatusDetails = allure.StatusDetail{Message: fmt.Sprintf("step [%s] failure", stepName), Trace: trace}
                 c.Case.Status        = allure.Failed
                 applyTags(c)
                 c.Case.Done()
+                c.Trace = &allure.StatusDetail{
+                    Message: fmt.Sprintf("case [%s] failure", c.Case.Name),
+                    Trace: trace,
+                }
                 
             }else{
-                c.Steps[len(c.Steps)-1].Done()
-                //pop element
-                c.Steps = c.Steps[:len(c.Steps)-1]
+                c.St.pop().Done()
             }
         }
     }
@@ -1150,20 +1173,8 @@ func _caseDone(args ...Object) (Object, error){
 
 //return a copy the param_case and override the data with var_case
 //param: param_case var_case
+//TODO merge into method _caseCopy
 func _caseCombine(args ...Object) (Object, error){
-    if args[0] == UndefinedValue{
-        //param is undefined
-        newCase,err := _caseCopy(args[1])
-        if newCase!=nil{
-            newCase.(*NativeReference).Value.(*C).Case=nil
-            newCase.(*NativeReference).Value.(*C).LocalCase=false
-        }
-        return newCase,err
-    }
-    if args[1] == UndefinedValue{
-        return _caseCombine(args[0])
-    }
-
     if err := validateArgs(2, []string{"native-ref(*tengo.C)", "native-ref(*tengo.C)"}, args...); err!=nil{
         return nil, err
     }
@@ -1173,11 +1184,8 @@ func _caseCombine(args ...Object) (Object, error){
     c:= newCase.(*NativeReference).Value.(*C)
     c.Case = origin.Case
     c.LocalCase = false
-    steps:= []*allure.Step{}
-    for _,s := range origin.Steps{
-        steps = append(steps, s)
-    }
-    c.Steps = steps
+    c.Trace = origin.Trace
+    c.St = origin.St
     return newCase, nil
 }
 
@@ -1192,6 +1200,16 @@ func applyTags(c *C){
         if c.Story       !=""{c.Case.WithStory(c.Story)}
         if c.Feature     !=""{c.Case.WithFeature(c.Feature)}
         if c.Package     !=""{c.Case.WithPackage(c.Package)}
+    }
+}
+
+//case skip only happends at the begining of case
+func caseSkip(c *C, details *allure.StatusDetail){
+    if c.Case!=nil{
+        applyTags(c)
+        c.Case.Status=allure.Skipped
+        c.Case.StatusDetails = *details
+        c.Case.Done()
     }
 }
 

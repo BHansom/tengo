@@ -137,7 +137,7 @@ func (v *VM)getStackTrace() string{
         frameIndex--
         frame:= &v.frames[frameIndex-1]
         filePos = v.fileSet.Position(frame.fn.SourcePos(frame.ip -1 ))
-        ret+= fmt.Sprintf("%w\n\tat %s", ret, filePos)
+        ret= fmt.Sprintf("%s\n\tat %s", ret, filePos)
     }
     return ret
 }

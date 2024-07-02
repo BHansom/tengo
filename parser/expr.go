@@ -116,6 +116,7 @@ type CallExpr struct {
 	Args     []Expr
 	Ellipsis Pos
 	RParen   Pos
+    PropagateError bool
 }
 
 func (e *CallExpr) exprNode() {}

@@ -285,12 +285,18 @@ func (p *Parser) parseCall(x Expr) *CallExpr {
 
 	p.exprLevel--
 	rparen := p.expect(token.RParen)
+    propagateError := false
+    if p.token == token.Not{
+        propagateError= true
+        p.expect(token.Not)
+    }
 	return &CallExpr{
 		Func:     x,
 		LParen:   lparen,
 		RParen:   rparen,
 		Ellipsis: ellipsis,
 		Args:     list,
+        PropagateError: propagateError,
 	}
 }
 
