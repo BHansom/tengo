@@ -1528,8 +1528,15 @@ func (c *Compiler) initSymbolTable() error{
         }
         return c.Compile(combineCase)
     }
-    if found {
+    if found {//found !pfound
         //block
+        preserveOrigin := &parser.AssignStmt{
+            LHS: []parser.Expr{&parser.Ident{ Name: string(ParamCase), NamePos: 0, }},
+            RHS: []parser.Expr{&parser.Ident{ Name: string(VarCase), NamePos: 0,   }},
+            Token: token.Define,
+            TokenPos: 0,
+        }
+        if err:= c.Compile(preserveOrigin); err!=nil{return err}
         assignLocal := &parser.AssignStmt{
             LHS: []parser.Expr{&parser.Ident{ Name: string(VarCase), NamePos: 0, }},
             RHS: []parser.Expr{
@@ -1552,41 +1559,37 @@ func (c *Compiler) initSymbolTable() error{
             Token: token.Define,
             TokenPos: 0,
         }
-
-        if err:=c.Compile(assignLocal); err!=nil{return err}
+        return c.Compile(assignLocal)
     
-    }else{
-        //This will only happen one time in every compilation(NewCompiler)
-        define:= &parser.AssignStmt{
-            LHS: []parser.Expr{&parser.Ident{ Name: string(VarCase), NamePos: 0, }},
-            RHS: []parser.Expr{
-                &parser.CallExpr{
-                    Func: &parser.Ident{
-                        Name:"_emptyRef", 
-                        NamePos: 0,
-                    },
-                    LParen: 0,
-                    RParen: 0,
-                    Ellipsis: 0,
+    }
+    // var case is undefined at global scope here
+    define:= &parser.AssignStmt{
+        LHS: []parser.Expr{&parser.Ident{ Name: string(VarCase), NamePos: 0, }},
+        RHS: []parser.Expr{
+            &parser.CallExpr{
+                Func: &parser.Ident{
+                    Name:"_emptyRef", 
+                    NamePos: 0,
                 },
-
+                LParen: 0,
+                RParen: 0,
+                Ellipsis: 0,
             },
-            Token: token.Define,
-            TokenPos: 0,
-        }
-        if err:=c.Compile(define); err!=nil{return err}
+
+        },
+        Token: token.Define,
+        TokenPos: 0,
     }
-    if !pfound{
-        //preserve for block
-        preserveOrigin := &parser.AssignStmt{
-            LHS: []parser.Expr{&parser.Ident{ Name: string(ParamCase), NamePos: 0, }},
-            RHS: []parser.Expr{&parser.Ident{ Name: string(VarCase), NamePos: 0,   }},
-            Token: token.Define,
-            TokenPos: 0,
-        }
-        if err:= c.Compile(preserveOrigin); err!=nil{return err}
+    if err:=c.Compile(define); err!=nil{return err}
+    assert(!pfound)
+    //preserve for block
+    preserveOrigin := &parser.AssignStmt{
+        LHS: []parser.Expr{&parser.Ident{ Name: string(ParamCase), NamePos: 0, }},
+        RHS: []parser.Expr{&parser.Ident{ Name: string(VarCase), NamePos: 0,   }},
+        Token: token.Define,
+        TokenPos: 0,
     }
-    return nil
+    return c.Compile(preserveOrigin)
 }
 //gencode for finalize the symbolTable
 func (c *Compiler) finalizeSymbolTable() error{

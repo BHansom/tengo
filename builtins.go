@@ -914,7 +914,7 @@ func _caseNew(args ...Object) (Object, error){
     fullName,_ := args[2].(*String)
 
     origin:= args[0].(*NativeReference).Value.(*C)
-    if origin.Case!=nil && origin.Case.Status!=""{
+    if origin.caseAvailable(){
         _caseDone(args[0], &String{Value: "Pass"})
     }
     ret,_ := _caseCopy(args[0])
@@ -956,17 +956,16 @@ func _caseClose(args ...Object) (Object, error){
         c.Case.Done()
     }
     
+    param := args[1].(*NativeReference).Value.(*C)
     if c.Trace!=nil{
-        fmt.Println("_caseClose trace not null" )
         //TODO extract method to fail the C
         isBlock := args[2].(*Bool).value
-        param := args[1].(*NativeReference).Value.(*C)
         if (isBlock || param.Error) && 
             param.Trace == nil {
             param.Trace = c.Trace
-            param.Error=false//reset
         }
     }
+    param.Error=false//reset
 
     
     
@@ -1034,8 +1033,8 @@ func _caseAttachment(args ...Object) (Object, error){
         return nil, err
     }
     c:= args[0].(*NativeReference).Value.(*C)
-    if c.Case==nil || c.Case.Status!=""{
-        warnNoCaseOrStep()
+    if !c.caseAvailable(){
+        warnNoCaseOrStep(c)
         return nil,nil
     }
 
@@ -1059,8 +1058,8 @@ func _caseParameter(args ...Object) (Object, error){
         return nil, err
     }
     c:= args[0].(*NativeReference).Value.(*C)
-    if c.Case==nil|| c.Case.Status!=""{
-        warnNoCaseOrStep()
+    if !c.caseAvailable(){
+        warnNoCaseOrStep(c)
         return nil, nil
     }
     key := args[1].(*String).Value
@@ -1082,7 +1081,7 @@ func _caseStep(args ...Object) (Object, error){
     }
     c:= args[0].(*NativeReference).Value.(*C)
     if !c.caseAvailable(){
-        warnNoCaseOrStep()
+        warnNoCaseOrStep(c)
         return nil,nil
     }
     stepName := args[1].(*String).Value
@@ -1106,8 +1105,8 @@ func _caseDone(args ...Object) (Object, error){
         }
     }
     
-    if c.Case==nil ||c.Case.Status!=""{
-        warnNoCaseOrStep()
+    if !c.caseAvailable(){
+        warnNoCaseOrStep(c)
         return nil,nil
     }
     switch(t.Value){
@@ -1144,7 +1143,7 @@ func _caseDone(args ...Object) (Object, error){
         //check steps empty 
         if c.St.empty(){
             //no steps
-            warnNoCaseOrStep()
+            warnNoCaseOrStep(c)
             return nil,nil
         }else{
             if t.Value=="FailStep"{
@@ -1213,9 +1212,13 @@ func caseSkip(c *C, details *allure.StatusDetail){
     }
 }
 
-func warnNoCaseOrStep() {
-    fmt.Println("Warning: no case or step found")
-    fmt.Println(CurrentVM().getStackTrace())
+func warnNoCaseOrStep(c *C) {
+    //if the status is failed or skipped, may be the preceding operation cause the operation 
+    //unavailable, discard it
+    if c.Case!=nil && c.Case.Status=="pass"{
+        fmt.Println("Warning: no case or step found")
+        fmt.Println(CurrentVM().getStackTrace())
+    }
 }
 
 func builtinCase(args ...Object) (Object, error){
