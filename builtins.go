@@ -1,9 +1,16 @@
 package tengo
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"slices"
+	"strings"
 
 	"github.com/d5/tengo/v2/allure"
+	"github.com/spyzhov/ajson"
 )
 
 var builtinFuncs = []*BuiltinFunction{
@@ -179,6 +186,18 @@ var builtinFuncs = []*BuiltinFunction{
     {
         Name: "_toggleError",
         Value: _toggleError,
+    },
+    {
+        Name: "_caseRequest",
+        Value: _caseRequest,
+    },
+    {
+        Name: "_caseAssert",
+        Value: _caseAssert,
+    },
+    {
+        Name: "_caseExtract",
+        Value: _caseExtract,
     },
 }
 
@@ -1054,25 +1073,25 @@ func _caseAttachment(args ...Object) (Object, error){
 }
 //param
 func _caseParameter(args ...Object) (Object, error){
-   if err := validateArgs(3, []string{"native-ref(*tengo.C)", "string", "string"}, args...); err!=nil{
+   if err := validateArgs(3, []string{"native-ref(*tengo.C)", "string"}, args...); err!=nil{
         return nil, err
     }
     c:= args[0].(*NativeReference).Value.(*C)
+    key := args[1].(*String).Value
+    value := fmt.Sprintf("%v", ToInterface(args[2]))
+    return caseParameter(c, key, value)
+}
+func caseParameter(c *C, k string, v any)(Object , error){
     if !c.caseAvailable(){
         warnNoCaseOrStep(c)
-        return nil, nil
+        return nil,nil
     }
-    key := args[1].(*String).Value
-    value := args[2].(*String).Value
-    
     if !c.St.empty(){
-        //current step
-        c.currentStep().WithParameters(allure.NewParameter(key, value))
+        c.currentStep().WithParameters(allure.NewParameter(k, v))
     }else{
-        c.Case.Parameters = append(c.Case.Parameters, allure.NewParameter(key, value))
+        c.Case.Parameters = append(c.Case.Parameters, allure.NewParameter(k, v))
     }
-    
-    return nil, nil
+    return nil,nil
 }
 //a stack is used to store the step
 func _caseStep(args ...Object) (Object, error){
@@ -1149,11 +1168,12 @@ func _caseDone(args ...Object) (Object, error){
             if t.Value=="FailStep"{
                 msg:=args[2].(*String).Value
                 trace:=CurrentVM().getStackTrace()
-                stepName := c.currentStep().Name
-                c.St.fail(&allure.StatusDetail{Message: msg, Trace: trace})
+                detail := &allure.StatusDetail{Message: msg, Trace: trace}
+
+                c.St.fail(detail)
                 //failing a step makes the full case fail
                 //TODO use pointer
-                c.Case.StatusDetails = allure.StatusDetail{Message: fmt.Sprintf("step [%s] failure", stepName), Trace: trace}
+                c.Case.StatusDetails = *detail
                 c.Case.Status        = allure.Failed
                 applyTags(c)
                 c.Case.Done()
@@ -1177,15 +1197,218 @@ func _caseCombine(args ...Object) (Object, error){
     if err := validateArgs(2, []string{"native-ref(*tengo.C)", "native-ref(*tengo.C)"}, args...); err!=nil{
         return nil, err
     }
-    newCase, err:= _caseCopy(args[1])
+    newCase, err:= _caseCopy(args[0])
     if err!=nil{return nil, err}
-    origin := args[0].(*NativeReference).Value.(*C)
+    closure := args[1].(*NativeReference).Value.(*C)
     c:= newCase.(*NativeReference).Value.(*C)
-    c.Case = origin.Case
-    c.LocalCase = false
-    c.Trace = origin.Trace
-    c.St = origin.St
+
+    //override
+    if closure.Domain!=""{ c.Domain=closure.Domain}
+    for k,v := range closure.Headers{
+        c.Headers[k]= v
+    }
+    if closure.Suite!=""{ c.Suite=closure.Suite}
+    if closure.ParentSuite!=""{ c.ParentSuite=closure.ParentSuite}
+    if closure.SubSuite!=""{ c.SubSuite=closure.SubSuite}
+    if closure.Epic!=""{ c.Epic=closure.Epic}
+    if closure.Story!=""{ c.Story=closure.Story}
+    if closure.Feature!=""{ c.Feature=closure.Feature}
+    if closure.Package!=""{ c.Package=closure.Package}
+
     return newCase, nil
+}
+
+//http request
+//request is a step
+//TODO how to deal with nil returned by this func 
+func _caseRequest(args ...Object)(Object, error){
+    if err := validateArgs(3, []string{"native-ref(*tengo.C)", "string", "string", "", "map"}, args...); err!=nil{
+        return nil, err
+    }
+    //request things
+    c:= args[0].(*NativeReference).Value.(*C)
+    if !c.caseAvailable(){
+        warnNoCaseOrStep(c)
+        return nil, nil
+    }
+    _caseStep(args[0], &String{Value: "http request"})
+
+    
+    path:=args[1].(*String).Value
+    uri := c.Domain
+    if uri==""{
+        return nil, errors.New("Domain not set")
+
+    }
+    if strings.HasSuffix(uri, "/"){
+        uri = uri[:len(uri)-1]
+    }
+    uri = uri + path
+    method:=strings.ToUpper(args[2].(*String).Value)
+    caseParameter(c, "url", uri)
+    caseParameter(c, "method", method)
+
+    //new req
+    var body io.Reader
+    if len(args)>=4{
+        //TODO use json in tengo stdlib
+        bodyMap:= args[3]
+        if !bodyMap.IsFalsy(){
+            rawBody:= wrapMarshal((bodyMap))
+            caseParameter(c, "request-body", rawBody)
+            body= strings.NewReader(rawBody)
+        }
+    }
+    req,err:= http.NewRequest(method, uri, body)
+    if err!=nil{return nil,err}
+
+
+    //header
+    if len(args)>=5{
+        for k,v := range args[4].(*Map).Value{
+            //TODO why are string quoted
+            s:=v.String()
+            if st,ok:= v.(*String); ok{
+                //get the raw string
+                s=st.Value
+            }
+            req.Header.Add(k, s)
+        }
+    }
+    for k,v := range c.Headers{
+        req.Header.Add(k, v)
+    }
+    caseParameter(c, "request-headers", wrapMarshal(buildHeader(req.Header)))
+    resp, err := http.DefaultClient.Do(req)
+    defer resp.Body.Close()
+    if err!=nil{
+        //do fail step
+        _caseDone(args[0], wrapFromInterface("FailStep"), wrapFromInterface(err.Error()))
+        return nil, nil
+    }
+    if resp.StatusCode >= 400{
+        //resp code over 400 are considered error
+        //do fail step
+        _caseDone(args[0], wrapFromInterface("FailStep"), wrapFromInterface(fmt.Sprintf("error response code : %d" , resp.StatusCode)))
+    }
+    
+
+    //step info 
+    //uri/method/body/resp
+    ret:=map[string]Object{}
+
+    header:= buildHeader((resp.Header))
+    ret["status"]= &Int{Value: int64(resp.StatusCode)}
+    ret["url"]= &String{Value: resp.Request.RequestURI}
+    ret["method"]= &String{Value: resp.Request.Method}
+    //XXX use the FromInterface func to convert all types 
+    ret["headers"]= header
+    responseBody, err := io.ReadAll(resp.Body)
+    if err!=nil{return nil, err}
+    ret["body"]=&String{Value: string(responseBody)}
+
+
+    //response status/headers/body/
+    caseParameter(c, "status", fmt.Sprintf("%v", resp.StatusCode))
+    caseParameter(c, "response-headers", wrapMarshal(header))
+    caseParameter(c, "response-body", string(responseBody))
+    _caseDone(args[0], wrapFromInterface("PassStep"))
+    return &Map{
+        Value: ret,
+    },nil
+}
+
+//assert step
+//assert equal   0 expr arg0 arg1  
+//assert not eq  1 expr arg0 arg1  
+//assert that    2 expr arg0 nil
+func _caseAssert(args ...Object)(Object, error){
+    if err := validateArgs(4, []string{"native-ref(*tengo.C)", "int", "string", ""}, args...); err!=nil{
+        return nil, err
+    }
+    c:= args[0].(*NativeReference).Value.(*C)
+    if !c.caseAvailable(){
+        warnNoCaseOrStep(c)
+        return nil, nil
+    }
+
+    _caseStep(args[0], wrapFromInterface("assertion"))
+    t:= args[1].(*Int).Value// assert result
+    expr:= args[2].(*String).Value
+
+    caseParameter(c, "expr" , expr)
+    for i:=3;i<len(args);i++{
+        caseParameter(c, fmt.Sprintf("arg%d", i-3), ToInterface(args[i]))
+    }
+    if t==0{
+        check:= args[3].(*Bool).value
+        if check{
+            _caseDone(args[0], wrapFromInterface("PassStep"))
+        }else{
+            _caseDone(args[0], wrapFromInterface("FailStep"), wrapFromInterface("assertion failed"))
+        }
+    }else{
+        expect:= true
+        if t==2 { expect=false }
+        check:= args[3].Equals(args[4])
+        if check==expect{
+            _caseDone(args[0], wrapFromInterface("PassStep"))
+        }else{
+            _caseDone(args[0], wrapFromInterface("FailStep"), wrapFromInterface("assertion failed"))
+        }
+    }
+
+    
+    
+
+    return nil, nil
+}
+//extract data from json
+func _caseExtract(args ...Object)(Object, error){
+    if err := validateArgs(3, []string{"native-ref(*tengo.C)", "string", "string"}, args...); err!=nil{
+        return nil, err
+    }
+    c:=args[0].(*NativeReference).Value.(*C)
+    if !c.caseAvailable(){
+        warnNoCaseOrStep(c)
+        return nil,nil
+    }
+    _caseStep(args[0], wrapFromInterface("extract data"))
+
+    expr:= args[1].(*String).Value
+    obj:= args[2].(*String).Value
+    caseParameter(c, "expr", expr)
+    caseParameter(c, "data", obj )
+    root, err := ajson.Unmarshal([]byte(obj))
+    if err!=nil{
+        //fail step
+        return _caseDone(args[0], wrapFromInterface("FailStep"), wrapFromInterface(err.Error()))
+    }
+    nodes, err:= root.JSONPath(expr)
+    if err!=nil{
+        //fail step
+        return _caseDone(args[0], wrapFromInterface("FailStep"), wrapFromInterface(err.Error()))
+    }
+    result:= ajson.ArrayNode("", nodes)
+    j,_ := ajson.Marshal(result)
+    caseParameter(c, "result", string(j))
+    _caseDone(args[0], wrapFromInterface("PassStep"))
+    
+
+    //TODO reduce the times of marshalling and unmarshalling
+    var o interface{}
+    json.Unmarshal(j, &o)
+    return wrapFromInterface(o), nil
+}
+func buildHeader(h http.Header) *Map{
+    m := map[string]Object{}
+    for k,v := range h{
+        m[k]  = &String{ Value: strings.Join(v, "")}
+    }
+
+    return &Map{
+        Value: m,
+    }
 }
 
 func applyTags(c *C){
@@ -1215,7 +1438,7 @@ func caseSkip(c *C, details *allure.StatusDetail){
 func warnNoCaseOrStep(c *C) {
     //if the status is failed or skipped, may be the preceding operation cause the operation 
     //unavailable, discard it
-    if c.Case!=nil && c.Case.Status=="pass"{
+    if c.Case==nil || c.Case.Status=="passed"{
         fmt.Println("Warning: no case or step found")
         fmt.Println(CurrentVM().getStackTrace())
     }
@@ -1249,6 +1472,7 @@ func builtinPass(args ...Object) (Object, error){
     return nil, nil
 }
 
+//types  acceptable types splited by /,  empty string for any type 
 func validateArgs(requiredArgs int, types []string, args ...Object) error{
     if len(args)<requiredArgs{
         return ErrWrongNumArguments 
@@ -1259,16 +1483,44 @@ func validateArgs(requiredArgs int, types []string, args ...Object) error{
         if i >= maxLen{
             break
         }
-        
-        if arg !=nil && arg.TypeName()!=types[i]{
+        candidates:= strings.Split(types[i], "/")// multiple types, mainly undefined values
+        if ! slices.ContainsFunc(candidates, func(s string)bool{
+            return s =="" || s==arg.TypeName()// type is "" or type equals
+        }){
             return ErrInvalidArgumentType{
-                Name:     "arg" + string(i),
+                Name:     fmt.Sprintf("arg%d", i),
                 Expected: types[i],
                 Found:    args[i].TypeName(),
             }
         }
     }
     return nil
+}
+func wrapMarshal(i interface{})string{
+    var inf interface{}
+    switch i:=i.(type){
+    case Object:
+        inf = ToInterface(i)
+        return wrapMarshal(inf)
+    case []byte:
+        inf = string(i)
+    default:
+        inf = i
+    }
+    bytes, err := json.Marshal(inf)
+    if err!=nil{
+        panic(err)
+    }
+    return string(bytes)
+
+}
+//convert an golang object to tengo object
+func wrapFromInterface(i interface{})Object{
+    ret, err := FromInterface(i)
+    if err!=nil{
+        panic("error convert from interface:" + err.Error())
+    }
+    return ret
 }
 
 func assert(v bool){

@@ -136,6 +136,7 @@ func (c *Compiler) Compile(node parser.Node) error {
 		}
         //preprocess is not func call
         if !caseCall{
+            //TODO what is this used for
             c.emit(node, parser.OpPop)
         }
 	case *parser.IncDecStmt:
@@ -1401,6 +1402,12 @@ func (c *Compiler) isCaseCall(node parser.Node) bool{
         "Parameter",
         "Step",
 
+        "Request",
+        "AssertEqual",
+        "AssertNotEqual",
+        "AssertThat",
+        "Extract",
+
     }
     
     switch t:= node.(type){
@@ -1444,6 +1451,64 @@ func (c *Compiler) compileCase(node *parser.CallExpr) (error){
         assign=false
         call=  "_caseParameter"
         Args=  append([]parser.Expr{&parser.Ident{ Name: string(VarCase), NamePos: node.Pos(), }}, node.Args...)
+    case "Request":
+        assign=false
+        call=  "_caseRequest"
+        Args=  append([]parser.Expr{&parser.Ident{ Name: string(VarCase), NamePos: node.Pos(), }}, node.Args...)
+    case "Extract":
+        assign=false
+        call=  "_caseExtract"
+        Args=  append([]parser.Expr{&parser.Ident{ Name: string(VarCase), NamePos: node.Pos(), }}, node.Args...)
+    case "AssertEqual", "AssertNotEqual", "AssertThat":
+        assign=false
+        call=  "_caseAssert"
+        if callName=="AssertThat"{
+            if len(node.Args)!=1{return ErrWrongNumArguments}
+            Args = ([]parser.Expr{
+                &parser.Ident{Name: string(VarCase), NamePos: node.Pos()}, 
+                // node.Args[0],
+                &parser.IntLit{Value: 0, Literal: "0"},
+                &parser.StringLit{Value: node.Args[0].String(), ValuePos: node.Pos(), Literal: node.Args[0].String()},// expr
+                node.Args[0],
+                // &parser.UndefinedLit{TokenPos: node.Pos()},
+                // &parser.UndefinedLit{TokenPos: node.Pos()},
+            })
+        }else{
+            if len(node.Args)!=2{return ErrWrongNumArguments}
+            t:=token.Equal
+            eq:=1
+            if callName=="AssertNotEqual"{
+                t=token.NotEqual
+                eq=2
+            }
+            binaryExpr := &parser.BinaryExpr{
+                LHS: node.Args[0],
+                RHS: node.Args[1],
+                Token: t,
+                TokenPos: node.Pos(),
+            }
+            Args = ([]parser.Expr{
+                &parser.Ident{Name: string(VarCase), NamePos: node.Pos()}, 
+                &parser.IntLit{Value: int64(eq), Literal:fmt.Sprintf("%v", eq)},
+                // binaryExpr,
+                &parser.StringLit{Value: binaryExpr.String(), ValuePos: node.Pos(), Literal: binaryExpr.String()},// expr
+                node.Args[0],
+                node.Args[1],
+                
+                
+                
+                
+                // &parser.IntLit{Value: int64(t), Literal: fmt.Sprintf("%v", t)},
+                // &parser.StringLit{Value: node.Args[0].String(), ValuePos: node.Pos(), Literal: node.Args[0].String()},// expr
+                // &parser.StringLit{Value: node.Args[1].String(), ValuePos: node.Pos(), Literal: node.Args[1].String()},// expr
+                //&parser.UndefinedLit{TokenPos: node.Pos()},
+                // node.Args[0],
+                // node.Args[1],
+                // &parser.UndefinedLit{TokenPos: node.Pos()},
+            })
+        }
+        
+        
     case "Fail", "Pass", "PassStep","FailStep":
         assign=false
         call=  "_caseDone"
