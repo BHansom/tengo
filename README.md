@@ -1,150 +1,85 @@
-# The Tengo Language
+# Tengo QA
 
-[![GoDoc](https://godoc.org/github.com/d5/tengo/v2?status.svg)](https://godoc.org/github.com/d5/tengo/v2)
-![test](https://github.com/d5/tengo/workflows/test/badge.svg)
-[![Go Report Card](https://goreportcard.com/badge/github.com/d5/tengo)](https://goreportcard.com/report/github.com/d5/tengo)
-
-**Tengo is a small, dynamic, fast, secure script language for Go.** 
-
-Tengo is **[fast](#benchmark)** and secure because it's compiled/executed as
-bytecode on stack-based VM that's written in native Go.
+This is a fork of the script language [tengo](https://github.com/d5/tengo)
+specialized for api test automation.
 
 ```golang
 /* The Tengo Language */
 fmt := import("fmt")
 
-each := func(seq, fn) {
-    for x in seq { fn(x) }
-}
 
-sum := func(init, seq) {
-    each(seq, func(x) { init += x })
-    return init
-}
+Domain("https://localhost:8080")
+//declare a test case
+Case("name of case 1", "fullname of case 1")
 
-fmt.println(sum(0, [1, 2, 3]))   // "6"
-fmt.println(sum("", [1, 2, 3]))  // "123"
+Parameter("author", "bob")
+
+resp := Request("/get", "GET")
+fmt.println(resp)
+//jsonpath
+names:= Extract("$[*].name", resp.body)
+AssertThat(len(names)>0)
 ```
-
-> Test this Tengo code in the
-> [Tengo Playground](https://tengolang.com/?s=0c8d5d0d88f2795a7093d7f35ae12c3afa17bea3)
 
 ## Features
 
-- Simple and highly readable
-  [Syntax](https://github.com/d5/tengo/blob/master/docs/tutorial.md)
-  - Dynamic typing with type coercion
-  - Higher-order functions and closures
-  - Immutable values
-- [Securely Embeddable](https://github.com/d5/tengo/blob/master/docs/interoperability.md)
-  and [Extensible](https://github.com/d5/tengo/blob/master/docs/objects.md)
-- Compiler/runtime written in native Go _(no external deps or cgo)_
-- Executable as a
-  [standalone](https://github.com/d5/tengo/blob/master/docs/tengo-cli.md)
-  language / REPL
-- Use cases: rules engine, [state machine](https://github.com/d5/go-fsm),
-  data pipeline, [transpiler](https://github.com/d5/tengo2lua)
-
-## Benchmark
-
-| | fib(35) | fibt(35) |  Language (Type)  |
-| :--- |    ---: |     ---: |  :---: |
-| [**Tengo**](https://github.com/d5/tengo) | `2,315ms` | `3ms` | Tengo (VM) |
-| [go-lua](https://github.com/Shopify/go-lua) | `4,028ms` | `3ms` | Lua (VM) |
-| [GopherLua](https://github.com/yuin/gopher-lua) | `4,409ms` | `3ms` | Lua (VM) |
-| [goja](https://github.com/dop251/goja) | `5,194ms` | `4ms` | JavaScript (VM) |
-| [starlark-go](https://github.com/google/starlark-go) | `6,954ms` | `3ms` | Starlark (Interpreter) |
-| [gpython](https://github.com/go-python/gpython) | `11,324ms` | `4ms` | Python (Interpreter) |
-| [Yaegi](https://github.com/containous/yaegi) | `11,715ms` | `10ms` | Yaegi (Interpreter) |
-| [otto](https://github.com/robertkrimen/otto) | `48,539ms` | `6ms` | JavaScript (Interpreter) |
-| [Anko](https://github.com/mattn/anko) | `52,821ms` | `6ms` | Anko (Interpreter) |
-| - | - | - | - |
-| Go | `47ms` | `2ms` | Go (Native) |
-| Lua | `756ms` | `2ms` | Lua (Native) |
-| Python | `1,907ms` | `14ms` | Python2 (Native) |
-
-_* [fib(35)](https://github.com/d5/tengobench/blob/master/code/fib.tengo):
-Fibonacci(35)_  
-_* [fibt(35)](https://github.com/d5/tengobench/blob/master/code/fibtc.tengo):
-[tail-call](https://en.wikipedia.org/wiki/Tail_call) version of Fibonacci(35)_  
-_* **Go** does not read the source code from file, while all other cases do_  
-_* See [here](https://github.com/d5/tengobench) for commands/codes used_
-
-## Quick Start
-
-```
-go get github.com/d5/tengo/v2
-```
-
-A simple Go example code that compiles/runs Tengo script code with some input/output values:
-
-```golang
-package main
-
-import (
-	"context"
-	"fmt"
-
-	"github.com/d5/tengo/v2"
-)
-
-func main() {
-	// create a new Script instance
-	script := tengo.NewScript([]byte(
-`each := func(seq, fn) {
-    for x in seq { fn(x) }
-}
-
-sum := 0
-mul := 1
-each([a, b, c, d], func(x) {
-    sum += x
-    mul *= x
-})`))
-
-	// set values
-	_ = script.Add("a", 1)
-	_ = script.Add("b", 9)
-	_ = script.Add("c", 8)
-	_ = script.Add("d", 4)
-
-	// run the script
-	compiled, err := script.RunContext(context.Background())
-	if err != nil {
-		panic(err)
-	}
-
-	// retrieve values
-	sum := compiled.Get("sum")
-	mul := compiled.Get("mul")
-	fmt.Println(sum, mul) // "22 288"
-}
-```
-
-Or, if you need to evaluate a simple expression, you can use [Eval](https://pkg.go.dev/github.com/d5/tengo/v2#Eval) function instead:
+- Features from tengo
+- Builtin functions for test(Domain, Feauture, Case, Step, ...)
+- Variable inheritance & error propagation
+- Test report generation
 
 
-```golang
-res, err := tengo.Eval(ctx,
-	`input ? "success" : "fail"`,
-	map[string]interface{}{"input": 1})
-if err != nil {
-	panic(err)
-}
-fmt.Println(res) // "success"
-```
+## Guide
 
-## References
+To make it powerful for api-test, some functions are added to tengo.
 
-- [Language Syntax](https://github.com/d5/tengo/blob/master/docs/tutorial.md)
-- [Object Types](https://github.com/d5/tengo/blob/master/docs/objects.md)
-- [Runtime Types](https://github.com/d5/tengo/blob/master/docs/runtime-types.md)
-  and [Operators](https://github.com/d5/tengo/blob/master/docs/operators.md)
-- [Builtin Functions](https://github.com/d5/tengo/blob/master/docs/builtins.md)
-- [Interoperability](https://github.com/d5/tengo/blob/master/docs/interoperability.md)
-- [Tengo CLI](https://github.com/d5/tengo/blob/master/docs/tengo-cli.md)
-- [Standard Library](https://github.com/d5/tengo/blob/master/docs/stdlib.md)
-- Syntax Highlighters: [VSCode](https://github.com/lissein/vscode-tengo), [Atom](https://github.com/d5/tengo-atom), [Vim](https://github.com/geseq/tengo-vim)
-- **Why the name Tengo?** It's from [1Q84](https://en.wikipedia.org/wiki/1Q84).
+### builtin-functions
 
+- `Case()`, `Step()`
+`Case()` initialize a **allure** test case, where subsequent `Step()` or Tag function calls will be contained in the final test report.
+`Step()` initialize a **allure** test case step. Steps can be recusive, if there steps that are not closed when calling the function.
+
+- Tag functions: `Header()/Domain()/ParentSuite()/Suite()/SubSuite()/Epic()/Feature()/Story()/Package()/Attachment()/Parameter()`
+`Header()` and `Domain()` are functions that set `request()` related data to be used subsequently.
+The rest functions listed above are tag functions which set the test cases' tags, which will be used in the allure report.
+
+Note: `Attachment()` and `Parameter()` can acts on step or case, depending on the context.
+
+
+- `Pass()/Fail()/PassStep()/FailStep()`
+These functions are functions to manully close the case/step.
+Implicitly, unclosed case will be close either on the next call to `Case()` or at the end of the function block(condition/loop/function).
+Steps has to be closed explicitly, or closed as the effect of case close (`Step()` will act on unclosed step, as mentioned above).
+
+- `Request()`
+`Request()` do a http request, and returns a response object. This functions is a `Step`, thus it will not work when no case/step available.
+
+- `Extract()`
+`Extract()` makes a jsonpath operation and returns a array as result. This functions is a `Step`.
+
+- `AssertThat()/AssertEqual()/AssertNotEqual()`
+
+Assertions makes check of the parameters. Assertions are steps.
+
+### variable inheritance
+Builtin variables are used when interact with cases/steps. The case/step/tags will be propagated as implicit args in func calls.
+E.g., you can declare tags before and use them in all the cascaded scopes without redeclaration(tags declared globally in ohter modules are prior to params
+and will thus override the declared tags). The builtin variables cannot be upward propagated.
+
+
+### error-propagation
+Errors will cause the following case to be skipped in the same function.
+Note: Errors here are not grammaric/semantic/runtime errors that cause the program halting but the errors from `Fail()/FailStep()` or the builtin steps.
+To bubble up errors, a `!` should be specified when calling the function: `a:= loginModule.login()!`
+
+### allure report
+If `Case()` are called at least once during the execution, a `allure-results` directory will be created and allure cases results will be outputed. All the
+data gathered during the execution will be shown in the workflow of allure.
+For more details, see [allure](https://allurereport.org/) and [allure-go](https://github.com/ozontech/allure-go)
+
+
+## See Also
+
+- The Tengo Lang: [https://github.com/d5/tengo](https://github.com/d5/tengo)
+- The Test Report framework: [allure](https://github.com/allure-framework/allure2)
 
